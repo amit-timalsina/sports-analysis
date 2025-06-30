@@ -47,23 +47,18 @@ to add custom logic or additional error handling as needed.
 
 """
 
+import logging
 from collections.abc import AsyncGenerator, Callable
 from typing import Generic, TypeVar
 from uuid import UUID
 
-from auth.models.user import User as UserModel
-from auth.schemas.user import User
-from logger import get_logger
-from organization.models.project import Project as ProjectModel
 from pydantic import BaseModel, TypeAdapter
 from sqlalchemy import BinaryExpression, ColumnElement, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.elements import UnaryExpression
 
-from database.base import CommonBase
-
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 ModelType = TypeVar("ModelType", bound=CommonBase)
 CreateSchemaType = TypeVar("CreateSchemaType", bound=BaseModel)

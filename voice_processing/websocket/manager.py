@@ -28,6 +28,7 @@ class ConnectionManager:
         """Initialize the connection manager."""
         self.active_connections: dict[str, WebSocket] = {}
         self.session_metadata: dict[str, dict[str, Any]] = {}
+        self.audio_buffers: dict[str, bytes] = {}  # Add audio buffering
 
     async def connect(self, websocket: WebSocket, session_id: str) -> None:
         """
@@ -56,6 +57,9 @@ class ConnectionManager:
             "message_count": 0,
             "last_activity": datetime.now(UTC).isoformat() + "Z",
         }
+        # Initialize audio buffer for this session
+        self.audio_buffers[session_id] = b""
+
         logger.info(
             "WebSocket connected for session: %s (%d total)",
             session_id,
@@ -64,10 +68,10 @@ class ConnectionManager:
 
     def disconnect(self, session_id: str) -> None:
         """
-        Remove a WebSocket connection and cleanup metadata.
+        Disconnect and clean up a WebSocket session.
 
         Args:
-            session_id: Session identifier to disconnect
+            session_id: Session to disconnect
 
         """
         if session_id in self.active_connections:
@@ -75,6 +79,10 @@ class ConnectionManager:
 
         if session_id in self.session_metadata:
             del self.session_metadata[session_id]
+
+        # Clean up audio buffer
+        if session_id in self.audio_buffers:
+            del self.audio_buffers[session_id]
 
         logger.info(
             "WebSocket disconnected for session: %s (%d remaining)",
@@ -256,6 +264,37 @@ class ConnectionManager:
             ),
         }
 
+    def set_session_metadata(self, session_id: str, metadata: dict[str, Any]) -> None:
+        """
+        Set custom metadata for a session.
+
+        Args:
+            session_id: Session identifier
+            metadata: Dictionary of metadata to store
+
+        """
+        if session_id in self.session_metadata:
+            self.session_metadata[session_id].update(metadata)
+            self.session_metadata[session_id]["last_activity"] = datetime.now(UTC).isoformat() + "Z"
+            logger.debug("Updated metadata for session %s: %s", session_id, metadata)
+        else:
+            logger.warning("Attempted to set metadata for non-existent session: %s", session_id)
+
+    def get_session_metadata(self, session_id: str) -> dict[str, Any] | None:
+        """
+        Get custom metadata for a session.
+
+        Args:
+            session_id: Session identifier
+
+        Returns:
+            Session metadata dictionary or None if session not found
+
+        """
+        if session_id in self.session_metadata:
+            return self.session_metadata[session_id].copy()
+        return None
+
     async def cleanup(self) -> None:
         """Cleanup all connections gracefully."""
         if not self.active_connections:
@@ -280,6 +319,51 @@ class ConnectionManager:
         self.active_connections.clear()
         self.session_metadata.clear()
         logger.info("WebSocket cleanup completed")
+
+    def accumulate_audio_chunk(self, session_id: str, audio_chunk: bytes) -> None:
+        """
+        Accumulate audio chunks for a session.
+
+        Args:
+            session_id: Session identifier
+            audio_chunk: Audio data chunk to accumulate
+
+        """
+        if session_id not in self.audio_buffers:
+            self.audio_buffers[session_id] = b""
+
+        self.audio_buffers[session_id] += audio_chunk
+        logger.debug(
+            "Accumulated audio chunk for session %s: +%d bytes (total: %d bytes)",
+            session_id,
+            len(audio_chunk),
+            len(self.audio_buffers[session_id]),
+        )
+
+    def get_accumulated_audio(self, session_id: str) -> bytes:
+        """
+        Get all accumulated audio for a session.
+
+        Args:
+            session_id: Session identifier
+
+        Returns:
+            All accumulated audio data
+
+        """
+        return self.audio_buffers.get(session_id, b"")
+
+    def clear_audio_buffer(self, session_id: str) -> None:
+        """
+        Clear the audio buffer for a session.
+
+        Args:
+            session_id: Session identifier
+
+        """
+        if session_id in self.audio_buffers:
+            self.audio_buffers[session_id] = b""
+            logger.debug("Cleared audio buffer for session %s", session_id)
 
 
 # Global connection manager instance

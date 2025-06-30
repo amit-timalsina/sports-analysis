@@ -14,8 +14,8 @@ class TranscriptionResponse(AppBaseModel):
     """Response model for audio transcription."""
 
     text: str = Field(..., description="Transcribed text from audio")
-    confidence: float = Field(..., description="Confidence score between 0 and 1")
-    language: str = Field(default="en", description="Detected language")
+    confidence: float = Field(ge=0.0, le=1.0, description="Confidence score of transcription")
+    language: str = Field(default="en", description="Detected or specified language")
 
 
 class VoiceInputRequest(AppBaseModel):
@@ -62,27 +62,11 @@ class ProcessedEntry(AppBaseModel):
 class WebSocketMessage(AppBaseModel):
     """Schema for WebSocket messages."""
 
-    type: Literal[
-        "audio_received",
-        "processing",
-        "transcription",
-        "structured_data",
-        "error",
-        "confirmation_request",
-        "connection_established",
-        "voice_received",
-        "transcript_ready",
-        "voice_processed_complete",
-        "ping",
-        "pong",
-        "session_info",
-        "connection_closed",
-    ]
-    data: dict[str, Any] | None = None
-    session_id: str | None = None
-    timestamp: str = Field(default_factory=lambda: datetime.now(UTC).isoformat() + "Z")
-    message: str | None = None
-    error: str | None = None
+    type: str = Field(description="Message type")
+    session_id: str = Field(description="Session identifier")
+    data: dict[str, Any] | None = Field(default=None, description="Message data")
+    error: str | None = Field(default=None, description="Error message if any")
+    message: str | None = Field(default=None, description="Human readable message")
 
 
 class SessionState(AppBaseModel):
@@ -109,3 +93,25 @@ class VoiceProcessingResult(AppBaseModel):
     database_saved: bool
     processing_duration: float
     errors: list[str] = Field(default_factory=list)
+
+
+class VoiceProcessingRequest(AppBaseModel):
+    """Request schema for voice processing with explicit entry type."""
+
+    entry_type: Literal["fitness", "cricket_coaching", "cricket_match", "rest_day"] = Field(
+        description="Type of entry the user wants to create",
+    )
+    session_id: str = Field(description="Voice session identifier")
+    user_id: str = Field(description="User identifier")
+
+
+class VoiceDataMessage(AppBaseModel):
+    """Schema for voice data WebSocket messages from client."""
+
+    type: Literal["voice_data"] = Field(description="Message type")
+    entry_type: Literal["fitness", "cricket_coaching", "cricket_match", "rest_day"] = Field(
+        description="Type of entry to create",
+    )
+    session_id: str = Field(description="Session identifier")
+    user_id: str = Field(default="demo_user", description="User identifier")
+    # Audio data will be sent separately as bytes

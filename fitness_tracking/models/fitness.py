@@ -1,27 +1,21 @@
 """Fitness tracking database models."""
 
+from datetime import datetime
 from enum import Enum
 
-from sqlmodel import Field
-
-from database.models.base import (
-    BaseTable,
-    CommonEntryFields,
-    EntryType,
-    UserSessionMixin,
-    VoiceProcessingMixin,
-)
+from sqlalchemy import DateTime, func
+from sqlmodel import Column, Field, SQLModel
 
 
 class FitnessType(str, Enum):
     """Types of fitness activities."""
 
     RUNNING = "running"
-    GYM = "gym"
-    CRICKET_SPECIFIC = "cricket_specific"
     STRENGTH_TRAINING = "strength_training"
+    CRICKET_SPECIFIC = "cricket_specific"
     CARDIO = "cardio"
-    OTHER = "other"
+    FLEXIBILITY = "flexibility"
+    GENERAL_FITNESS = "general_fitness"
 
 
 class Intensity(str, Enum):
@@ -32,37 +26,45 @@ class Intensity(str, Enum):
     HIGH = "high"
 
 
-class FitnessEntry(
-    BaseTable,
-    UserSessionMixin,
-    VoiceProcessingMixin,
-    CommonEntryFields,
-    table=True,
-):
-    """Database model for fitness entries."""
+class FitnessEntry(SQLModel, table=True):
+    """Database model for fitness activity entries."""
 
     __tablename__ = "fitness_entries"
 
-    # Set default entry type
-    entry_type: EntryType = Field(
-        default=EntryType.FITNESS,
-        index=True,
-        description="Type of entry",
+    # Primary key
+    id: int | None = Field(default=None, primary_key=True)
+
+    # User and session info
+    user_id: str = Field(index=True, description="User identifier")
+    session_id: str = Field(index=True, description="Voice session identifier")
+
+    # Voice processing metadata
+    transcript: str = Field(description="Original voice transcript")
+    confidence_score: float = Field(ge=0.0, le=1.0, description="AI confidence in data extraction")
+    processing_duration: float | None = Field(
+        default=None,
+        description="Time taken to process in seconds",
     )
 
-    # Fitness-specific fields
+    # Fitness activity data
     fitness_type: FitnessType = Field(description="Type of fitness activity")
     duration_minutes: int = Field(gt=0, description="Duration in minutes")
     intensity: Intensity = Field(description="Intensity level")
-    energy_level: int = Field(ge=1, le=5, description="Energy level from 1-5")
-    details: str = Field(description="Additional details about the activity")
+    details: str = Field(description="Activity details")
+    mental_state: str = Field(description="Mental state during activity")
+    energy_level: int = Field(ge=1, le=5, description="Energy level 1-5")
 
-    # Optional tracking fields
-    distance_km: float | None = Field(default=None, ge=0, description="Distance covered in km")
-    calories_burned: int | None = Field(default=None, ge=0, description="Estimated calories burned")
-    heart_rate_avg: int | None = Field(default=None, ge=0, description="Average heart rate")
-    heart_rate_max: int | None = Field(default=None, ge=0, description="Maximum heart rate")
+    # Optional metrics
+    distance_km: float | None = Field(default=None, ge=0, description="Distance in kilometers")
+    location: str | None = Field(default=None, description="Location of activity")
+    notes: str | None = Field(default=None, description="Additional notes")
 
-    # Weather and environment (for outdoor activities)
-    weather_conditions: str | None = Field(default=None, description="Weather conditions")
-    location: str | None = Field(default=None, description="Activity location")
+    # Timestamps
+    created_at: datetime = Field(
+        default_factory=datetime.utcnow,
+        sa_column=Column(DateTime(timezone=True), server_default=func.now()),
+    )
+    updated_at: datetime | None = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), onupdate=func.now()),
+    )

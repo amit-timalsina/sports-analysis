@@ -17,17 +17,25 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import uvicorn
-from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from langfuse import observe
 from pydantic import ValidationError
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from common.config.settings import settings
 from common.exceptions import AppError
 from common.schemas import ErrorResponse, HealthResponse, SuccessResponse
-from database.config.engine import sessionmanager
+from database.config.engine import get_database_session, sessionmanager
+from fitness_tracking.repositories.cricket_repository import (
+    CricketAnalyticsRepository,
+    CricketCoachingRepository,
+    CricketMatchRepository,
+    RestDayRepository,
+)
+from fitness_tracking.repositories.fitness_repository import FitnessRepository
 from voice_processing.schemas.processing import WebSocketMessage
 from voice_processing.services.audio_storage import audio_storage
 from voice_processing.services.openai_service import openai_service
@@ -333,6 +341,10 @@ async def voice_websocket_endpoint(websocket: WebSocket, session_id: str) -> Non
                     "supported_formats": settings.audio.supported_formats,
                     "max_duration_seconds": settings.audio.max_duration_seconds,
                 },
+                "recording_instructions": {
+                    "chunk_accumulation": True,
+                    "completion_signal": "Send 'recording_complete' message to process accumulated audio",
+                },
             },
         )
         await connection_manager.send_message(welcome_message, session_id)
@@ -350,7 +362,8 @@ async def voice_websocket_endpoint(websocket: WebSocket, session_id: str) -> Non
                 if "text" in data:
                     await handle_text_message(session_id, data["text"])
                 elif "bytes" in data:
-                    await handle_voice_data(session_id, data["bytes"])
+                    # Accumulate audio chunks instead of processing immediately
+                    await handle_audio_chunk(session_id, data["bytes"])
 
             except WebSocketDisconnect:
                 logger.info("WebSocket disconnected for session: %s", session_id)
@@ -375,31 +388,53 @@ async def voice_websocket_endpoint(websocket: WebSocket, session_id: str) -> Non
 
 
 async def handle_text_message(session_id: str, message: str) -> None:
-    """Handle text messages from WebSocket client."""
+    """Handle text messages from WebSocket clients."""
     try:
-        data = json.loads(message)
-        message_type = data.get("type")
+        message_data = json.loads(message)
+        message_type = message_data.get("type")
 
-        if message_type == "ping":
-            response = WebSocketMessage(
-                type="pong",
-                session_id=session_id,
+        if message_type == "voice_data_meta":
+            # Store metadata for this session
+            entry_type = message_data.get("entry_type")
+            user_id = message_data.get("user_id", "demo_user")
+
+            # Validate entry type
+            valid_entry_types = ["fitness", "cricket_coaching", "cricket_match", "rest_day"]
+            if entry_type not in valid_entry_types:
+                error_message = WebSocketMessage(
+                    type="error",
+                    session_id=session_id,
+                    error="invalid_entry_type",
+                    message=f"Invalid entry type. Must be one of: {valid_entry_types}",
+                )
+                await connection_manager.send_message(error_message, session_id)
+                return
+
+            # Store session metadata
+            connection_manager.set_session_metadata(
+                session_id,
+                {
+                    "entry_type": entry_type,
+                    "user_id": user_id,
+                },
             )
-            await connection_manager.send_message(response, session_id)
 
-        elif message_type == "session_info":
+            # Acknowledge metadata received
             response = WebSocketMessage(
-                type="session_info",
+                type="voice_meta_received",
                 session_id=session_id,
                 data={
-                    "status": "active",
-                    "settings": {
-                        "max_duration": settings.audio.max_duration_seconds,
-                        "supported_formats": settings.audio.supported_formats,
-                    },
+                    "entry_type": entry_type,
+                    "user_id": user_id,
+                    "ready_for_audio": True,
                 },
             )
             await connection_manager.send_message(response, session_id)
+
+        elif message_type == "recording_complete":
+            # Process the accumulated audio when recording is complete
+            logger.info("Received recording_complete signal for session %s", session_id)
+            await handle_complete_audio_processing(session_id)
 
         else:
             logger.warning("Unknown text message type: %s", message_type)
@@ -415,24 +450,141 @@ async def handle_text_message(session_id: str, message: str) -> None:
         await connection_manager.send_message(error_message, session_id)
 
 
-async def handle_voice_data(session_id: str, voice_data: bytes) -> None:
-    """Process voice data using the refactored services."""
+@observe(capture_input=True, capture_output=False)
+async def handle_audio_chunk(session_id: str, audio_chunk: bytes) -> None:
+    """Accumulate audio chunks for later processing when recording is complete."""
+    try:
+        # Validate audio chunk
+        if len(audio_chunk) == 0:
+            logger.debug("Received empty audio chunk for session %s", session_id)
+            return
+
+        # Check maximum individual chunk size to prevent abuse
+        max_chunk_size = 2 * 1024 * 1024  # 2MB per chunk
+        if len(audio_chunk) > max_chunk_size:
+            error_message = WebSocketMessage(
+                type="error",
+                session_id=session_id,
+                error="audio_chunk_too_large",
+                message=f"Audio chunk exceeds maximum size: {len(audio_chunk)} bytes",
+            )
+            await connection_manager.send_message(error_message, session_id)
+            return
+
+        # Accumulate the audio chunk
+        connection_manager.accumulate_audio_chunk(session_id, audio_chunk)
+        total_size = len(connection_manager.get_accumulated_audio(session_id))
+
+        # Check total accumulated size
+        max_total_size = settings.audio.max_file_size_mb * 1024 * 1024
+        if total_size > max_total_size:
+            error_message = WebSocketMessage(
+                type="error",
+                session_id=session_id,
+                error="total_audio_too_large",
+                message=f"Total accumulated audio exceeds maximum size: {total_size} bytes",
+            )
+            await connection_manager.send_message(error_message, session_id)
+            # Clear the buffer to prevent further accumulation
+            connection_manager.clear_audio_buffer(session_id)
+            return
+
+        # Send acknowledgment for chunk received
+        chunk_ack = WebSocketMessage(
+            type="audio_chunk_received",
+            session_id=session_id,
+            data={
+                "chunk_size": len(audio_chunk),
+                "total_accumulated": total_size,
+                "status": "accumulated",
+            },
+        )
+        await connection_manager.send_message(chunk_ack, session_id)
+
+        logger.debug(
+            "Accumulated audio chunk for session %s: +%d bytes (total: %d bytes)",
+            session_id,
+            len(audio_chunk),
+            total_size,
+        )
+
+    except Exception as e:
+        logger.exception("Audio chunk processing failed for session %s", session_id)
+        error_message = WebSocketMessage(
+            type="error",
+            session_id=session_id,
+            error="audio_chunk_processing_failed",
+            message=str(e),
+        )
+        await connection_manager.send_message(error_message, session_id)
+
+
+@observe(capture_input=True, capture_output=False)
+async def handle_complete_audio_processing(session_id: str) -> None:
+    """Process complete accumulated audio when recording is finished."""
     try:
         start_time = datetime.now(UTC)
 
-        # Send acknowledgment
-        ack_message = WebSocketMessage(
-            type="voice_received",
+        # Get accumulated audio data
+        voice_data = connection_manager.get_accumulated_audio(session_id)
+
+        if len(voice_data) == 0:
+            error_message = WebSocketMessage(
+                type="error",
+                session_id=session_id,
+                error="no_audio_data",
+                message="No audio data accumulated for processing",
+            )
+            await connection_manager.send_message(error_message, session_id)
+            return
+
+        # Check minimum audio size for meaningful content
+        min_audio_size = 1000  # At least 1KB for meaningful audio
+        if len(voice_data) < min_audio_size:
+            error_message = WebSocketMessage(
+                type="error",
+                session_id=session_id,
+                error="insufficient_audio_data",
+                message=f"Audio data too small: {len(voice_data)} bytes. Please record for longer.",
+            )
+            await connection_manager.send_message(error_message, session_id)
+            return
+
+        # Get session metadata (entry_type and user_id)
+        session_metadata = connection_manager.get_session_metadata(session_id)
+        if not session_metadata:
+            error_message = WebSocketMessage(
+                type="error",
+                session_id=session_id,
+                error="no_session_metadata",
+                message="Please send voice_data_meta message first with entry_type",
+            )
+            await connection_manager.send_message(error_message, session_id)
+            return
+
+        entry_type = session_metadata.get("entry_type")
+        user_id = session_metadata.get("user_id", "demo_user")
+
+        # Send processing start acknowledgment
+        processing_message = WebSocketMessage(
+            type="audio_processing_started",
             session_id=session_id,
             data={
-                "status": "processing",
-                "audio_size": len(voice_data),
+                "status": "processing_complete_audio",
+                "total_audio_size": len(voice_data),
+                "entry_type": entry_type,
+                "user_id": user_id,
             },
         )
-        await connection_manager.send_message(ack_message, session_id)
+        await connection_manager.send_message(processing_message, session_id)
 
-        # 1. Save raw audio using refactored audio storage
-        logger.info("Processing voice data for session %s: %s bytes", session_id, len(voice_data))
+        # 1. Save complete audio using refactored audio storage
+        logger.info(
+            "Processing complete audio for session %s: %s bytes, type: %s",
+            session_id,
+            len(voice_data),
+            entry_type,
+        )
 
         audio_save_result = await audio_storage.save_raw_audio(
             session_id=session_id,
@@ -440,7 +592,7 @@ async def handle_voice_data(session_id: str, voice_data: bytes) -> None:
             audio_format="webm",
         )
 
-        # 2. Transcribe audio using refactored OpenAI service
+        # 2. Transcribe complete audio using improved OpenAI service
         transcription_result = await openai_service.transcribe_audio(voice_data)
 
         # Send transcript to user for confirmation
@@ -451,22 +603,83 @@ async def handle_voice_data(session_id: str, voice_data: bytes) -> None:
                 "transcript": transcription_result.text,
                 "confidence": transcription_result.confidence,
                 "language": transcription_result.language,
+                "entry_type": entry_type,
             },
         )
         await connection_manager.send_message(transcript_message, session_id)
 
-        # 3. Determine entry type and extract structured data
-        entry_type = await openai_service.analyze_transcript_type(transcription_result.text)
+        # 3. Extract structured data based on client-specified entry type
+        structured_data = None
+        saved_entry = None
 
-        if entry_type == "fitness":
-            structured_data = await openai_service.extract_fitness_data(transcription_result.text)
-        else:
-            # For now, default to fitness data structure
-            structured_data = await openai_service.extract_fitness_data(transcription_result.text)
+        # Get database session for saving
+        async with sessionmanager.get_session() as db_session:
+            from fitness_tracking.repositories.cricket_repository import (
+                CricketCoachingRepository,
+                CricketMatchRepository,
+                RestDayRepository,
+            )
+            from fitness_tracking.repositories.fitness_repository import FitnessRepository
 
-        processing_duration = (datetime.now(UTC) - start_time).total_seconds()
+            processing_duration = (datetime.now(UTC) - start_time).total_seconds()
 
-        # Send final result to client
+            if entry_type == "fitness":
+                structured_data = await openai_service.extract_fitness_data(
+                    transcription_result.text,
+                )
+                fitness_repo = FitnessRepository(db_session)
+                saved_entry = await fitness_repo.create_from_voice_data(
+                    session_id=session_id,
+                    user_id=user_id,
+                    voice_data=structured_data,
+                    transcript=transcription_result.text,
+                    confidence_score=transcription_result.confidence,
+                    processing_duration=processing_duration,
+                )
+
+            elif entry_type == "cricket_coaching":
+                structured_data = await openai_service.extract_cricket_coaching_data(
+                    transcription_result.text,
+                )
+                cricket_repo = CricketCoachingRepository(db_session)
+                saved_entry = await cricket_repo.create_from_voice_data(
+                    session_id=session_id,
+                    user_id=user_id,
+                    voice_data=structured_data,
+                    transcript=transcription_result.text,
+                    confidence_score=transcription_result.confidence,
+                    processing_duration=processing_duration,
+                )
+
+            elif entry_type == "cricket_match":
+                structured_data = await openai_service.extract_cricket_match_data(
+                    transcription_result.text,
+                )
+                match_repo = CricketMatchRepository(db_session)
+                saved_entry = await match_repo.create_from_voice_data(
+                    session_id=session_id,
+                    user_id=user_id,
+                    voice_data=structured_data,
+                    transcript=transcription_result.text,
+                    confidence_score=transcription_result.confidence,
+                    processing_duration=processing_duration,
+                )
+
+            elif entry_type == "rest_day":
+                structured_data = await openai_service.extract_rest_day_data(
+                    transcription_result.text,
+                )
+                rest_repo = RestDayRepository(db_session)
+                saved_entry = await rest_repo.create_from_voice_data(
+                    session_id=session_id,
+                    user_id=user_id,
+                    voice_data=structured_data,
+                    transcript=transcription_result.text,
+                    confidence_score=transcription_result.confidence,
+                    processing_duration=processing_duration,
+                )
+
+        # Send final result to client with database entry info
         result_message = WebSocketMessage(
             type="voice_processed_complete",
             session_id=session_id,
@@ -474,16 +687,26 @@ async def handle_voice_data(session_id: str, voice_data: bytes) -> None:
                 "status": "success",
                 "entry_type": entry_type,
                 "structured_data": structured_data,
+                "saved_entry_id": saved_entry.id if saved_entry else None,
                 "audio_file": audio_save_result.get("filename"),
                 "processing_time": processing_duration,
+                "database_saved": saved_entry is not None,
+                "user_id": user_id,
             },
         )
         await connection_manager.send_message(result_message, session_id)
 
-        logger.info("✅ Complete voice processing successful for session %s", session_id)
+        # Clear the audio buffer after successful processing
+        connection_manager.clear_audio_buffer(session_id)
+
+        logger.info(
+            "✅ Complete voice processing and database save successful for session %s, entry_type: %s",
+            session_id,
+            entry_type,
+        )
 
     except Exception as e:
-        logger.exception("Voice processing failed for session %s", session_id)
+        logger.exception("Complete audio processing failed for session %s", session_id)
         error_message = WebSocketMessage(
             type="error",
             session_id=session_id,
@@ -491,6 +714,299 @@ async def handle_voice_data(session_id: str, voice_data: bytes) -> None:
             message=str(e),
         )
         await connection_manager.send_message(error_message, session_id)
+        # Clear buffer on error too
+        connection_manager.clear_audio_buffer(session_id)
+
+
+@app.get("/api/entries/fitness")
+async def get_fitness_entries(
+    limit: int = 10,
+    days_back: int = 30,
+    user_id: str = "demo_user",  # TODO: Get from authentication
+    session: AsyncSession = Depends(get_database_session),
+) -> SuccessResponse:
+    """Get recent fitness entries for a user."""
+    try:
+        fitness_repo = FitnessRepository(session)
+        entries = await fitness_repo.get_recent_entries(
+            user_id=user_id,
+            limit=limit,
+            days_back=days_back,
+        )
+
+        return SuccessResponse(
+            message="Fitness entries retrieved successfully",
+            data={
+                "entries": [entry.model_dump() for entry in entries],
+                "total_count": len(entries),
+                "user_id": user_id,
+                "days_back": days_back,
+            },
+        )
+    except Exception as e:
+        logger.exception("Failed to get fitness entries")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to retrieve fitness entries: {e}",
+        ) from e
+
+
+@app.get("/api/entries/cricket/coaching")
+async def get_cricket_coaching_entries(
+    limit: int = 10,
+    user_id: str = "demo_user",  # TODO: Get from authentication
+    session: AsyncSession = Depends(get_database_session),
+) -> SuccessResponse:
+    """Get cricket coaching session entries for a user."""
+    try:
+        cricket_repo = CricketCoachingRepository(session)
+        entries = await cricket_repo.read_multi(limit=limit)
+
+        return SuccessResponse(
+            message="Cricket coaching entries retrieved successfully",
+            data={
+                "entries": [entry.model_dump() for entry in entries],
+                "total_count": len(entries),
+                "user_id": user_id,
+            },
+        )
+    except Exception as e:
+        logger.exception("Failed to get cricket coaching entries")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to retrieve cricket coaching entries: {e}",
+        ) from e
+
+
+@app.get("/api/entries/cricket/matches")
+async def get_cricket_match_entries(
+    limit: int = 10,
+    user_id: str = "demo_user",  # TODO: Get from authentication
+    session: AsyncSession = Depends(get_database_session),
+) -> SuccessResponse:
+    """Get cricket match performance entries for a user."""
+    try:
+        match_repo = CricketMatchRepository(session)
+        entries = await match_repo.read_multi(limit=limit)
+
+        return SuccessResponse(
+            message="Cricket match entries retrieved successfully",
+            data={
+                "entries": [entry.model_dump() for entry in entries],
+                "total_count": len(entries),
+                "user_id": user_id,
+            },
+        )
+    except Exception as e:
+        logger.exception("Failed to get cricket match entries")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to retrieve cricket match entries: {e}",
+        ) from e
+
+
+@app.get("/api/entries/rest-days")
+async def get_rest_day_entries(
+    limit: int = 10,
+    user_id: str = "demo_user",  # TODO: Get from authentication
+    session: AsyncSession = Depends(get_database_session),
+) -> SuccessResponse:
+    """Get rest day entries for a user."""
+    try:
+        rest_repo = RestDayRepository(session)
+        entries = await rest_repo.read_multi(limit=limit)
+
+        return SuccessResponse(
+            message="Rest day entries retrieved successfully",
+            data={
+                "entries": [entry.model_dump() for entry in entries],
+                "total_count": len(entries),
+                "user_id": user_id,
+            },
+        )
+    except Exception as e:
+        logger.exception("Failed to get rest day entries")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to retrieve rest day entries: {e}",
+        ) from e
+
+
+@app.get("/api/analytics/fitness")
+async def get_fitness_analytics(
+    days_back: int = 30,
+    user_id: str = "demo_user",  # TODO: Get from authentication
+    session: AsyncSession = Depends(get_database_session),
+) -> SuccessResponse:
+    """Get comprehensive fitness analytics for a user."""
+    try:
+        fitness_repo = FitnessRepository(session)
+        analytics = await fitness_repo.get_fitness_analytics(
+            user_id=user_id,
+            days_back=days_back,
+        )
+
+        return SuccessResponse(
+            message="Fitness analytics generated successfully",
+            data={
+                "analytics": analytics.model_dump(),
+                "user_id": user_id,
+                "period_days": days_back,
+                "generated_at": datetime.now(UTC).isoformat(),
+            },
+        )
+    except Exception as e:
+        logger.exception("Failed to generate fitness analytics")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to generate fitness analytics: {e}",
+        ) from e
+
+
+@app.get("/api/analytics/cricket")
+async def get_cricket_analytics(
+    days_back: int = 30,
+    user_id: str = "demo_user",  # TODO: Get from authentication
+    session: AsyncSession = Depends(get_database_session),
+) -> SuccessResponse:
+    """Get comprehensive cricket analytics for a user."""
+    try:
+        cricket_analytics_repo = CricketAnalyticsRepository(session)
+        analytics = await cricket_analytics_repo.get_cricket_analytics(
+            user_id=user_id,
+            days_back=days_back,
+        )
+
+        return SuccessResponse(
+            message="Cricket analytics generated successfully",
+            data={
+                "analytics": analytics.model_dump(),
+                "user_id": user_id,
+                "period_days": days_back,
+                "generated_at": datetime.now(UTC).isoformat(),
+            },
+        )
+    except Exception as e:
+        logger.exception("Failed to generate cricket analytics")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to generate cricket analytics: {e}",
+        ) from e
+
+
+@app.get("/api/analytics/combined")
+async def get_combined_analytics(
+    days_back: int = 30,
+    user_id: str = "demo_user",  # TODO: Get from authentication
+    session: AsyncSession = Depends(get_database_session),
+) -> SuccessResponse:
+    """Get combined fitness and cricket analytics with correlations."""
+    try:
+        # Get both analytics
+        fitness_repo = FitnessRepository(session)
+        cricket_analytics_repo = CricketAnalyticsRepository(session)
+
+        fitness_analytics = await fitness_repo.get_fitness_analytics(user_id, days_back)
+        cricket_analytics = await cricket_analytics_repo.get_cricket_analytics(user_id, days_back)
+
+        # Simple correlation analysis (could be enhanced)
+        correlations = {}
+        if fitness_analytics.weekly_frequency > 0 and cricket_analytics.average_self_assessment > 0:
+            correlations["fitness_frequency_vs_cricket_confidence"] = min(
+                fitness_analytics.weekly_frequency
+                / 7
+                * cricket_analytics.average_self_assessment
+                / 10,
+                1.0,
+            )
+
+        # Generate combined recommendations
+        combined_recommendations = []
+        combined_recommendations.extend(fitness_analytics.recommendations[:2])
+        combined_recommendations.extend(cricket_analytics.recommendations[:2])
+
+        if fitness_analytics.weekly_frequency < 3:
+            combined_recommendations.append(
+                "Increase fitness frequency to improve cricket performance correlation",
+            )
+
+        return SuccessResponse(
+            message="Combined analytics generated successfully",
+            data={
+                "fitness_analytics": fitness_analytics.model_dump(),
+                "cricket_analytics": cricket_analytics.model_dump(),
+                "correlations": correlations,
+                "combined_recommendations": combined_recommendations,
+                "user_id": user_id,
+                "period_days": days_back,
+                "generated_at": datetime.now(UTC).isoformat(),
+            },
+        )
+    except Exception as e:
+        logger.exception("Failed to generate combined analytics")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to generate combined analytics: {e}",
+        ) from e
+
+
+@app.get("/api/dashboard")
+async def get_user_dashboard(
+    user_id: str = "demo_user",  # TODO: Get from authentication
+    session: AsyncSession = Depends(get_database_session),
+) -> SuccessResponse:
+    """Get comprehensive dashboard data for a user."""
+    try:
+        # Get recent entries from all types
+        fitness_repo = FitnessRepository(session)
+        cricket_coaching_repo = CricketCoachingRepository(session)
+        cricket_match_repo = CricketMatchRepository(session)
+        rest_repo = RestDayRepository(session)
+
+        # Get recent data (last 7 days)
+        recent_fitness = await fitness_repo.get_recent_entries(user_id, limit=5, days_back=7)
+        recent_coaching = await cricket_coaching_repo.read_multi(limit=3)
+        recent_matches = await cricket_match_repo.read_multi(limit=3)
+        recent_rest = await rest_repo.read_multi(limit=3)
+
+        # Get quick analytics
+        fitness_analytics = await fitness_repo.get_fitness_analytics(user_id, days_back=7)
+
+        # Activity summary for this week
+        activity_summary = {
+            "fitness_sessions": len(recent_fitness),
+            "cricket_coaching_sessions": len(recent_coaching),
+            "matches_played": len(recent_matches),
+            "rest_days": len(recent_rest),
+            "average_energy_level": fitness_analytics.average_energy_level,
+            "weekly_frequency": fitness_analytics.weekly_frequency,
+        }
+
+        return SuccessResponse(
+            message="Dashboard data retrieved successfully",
+            data={
+                "user_id": user_id,
+                "activity_summary": activity_summary,
+                "recent_entries": {
+                    "fitness": [entry.model_dump() for entry in recent_fitness],
+                    "cricket_coaching": [entry.model_dump() for entry in recent_coaching],
+                    "cricket_matches": [entry.model_dump() for entry in recent_matches],
+                    "rest_days": [entry.model_dump() for entry in recent_rest],
+                },
+                "quick_insights": {
+                    "most_common_fitness_activity": fitness_analytics.most_common_activity,
+                    "fitness_improvement_trends": fitness_analytics.improvement_trends,
+                    "recommendations": fitness_analytics.recommendations[:3],
+                },
+                "generated_at": datetime.now(UTC).isoformat(),
+            },
+        )
+    except Exception as e:
+        logger.exception("Failed to get dashboard data")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to retrieve dashboard data: {e}",
+        ) from e
 
 
 if __name__ == "__main__":
