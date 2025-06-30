@@ -150,16 +150,9 @@ class FitnessEntryResponse(AppBaseModel):
 class FitnessDataExtraction(AppBaseModel):
     """Schema for structured fitness data extraction from voice."""
 
-    fitness_type: Literal[
-        "running",
-        "strength_training",
-        "cricket_specific",
-        "cardio",
-        "flexibility",
-        "general_fitness",
-    ] = Field(
+    fitness_type: str = Field(
         ...,
-        description="Type of fitness activity - must be one of the valid fitness types",
+        description="Type of fitness activity. MUST be exactly one of: running, strength_training, cricket_specific, cardio, flexibility, general_fitness. Map similar activities: jog/jogging/run -> running, gym/weights/lifting -> strength_training, etc.",
     )
     duration_minutes: int = Field(
         ...,
@@ -167,9 +160,9 @@ class FitnessDataExtraction(AppBaseModel):
         le=300,
         description="Duration in minutes (1-300)",
     )
-    intensity: Literal["low", "medium", "high"] = Field(
+    intensity: str = Field(
         ...,
-        description="Intensity level - must be low, medium, or high",
+        description="Intensity level - must be exactly: low, medium, or high",
     )
     details: str = Field(
         ...,
@@ -208,6 +201,93 @@ class FitnessDataExtraction(AppBaseModel):
         max_length=200,
         description="Activity location",
     )
+
+    @field_validator("fitness_type")
+    @classmethod
+    def validate_fitness_type(cls, v: str) -> str:
+        """Validate and normalize fitness type to ensure it's one of the allowed values."""
+        # Mapping of common variations to valid enum values
+        normalization_map = {
+            "jog": "running",
+            "jogging": "running",
+            "run": "running",
+            "sprint": "running",
+            "sprinting": "running",
+            "gym": "strength_training",
+            "weights": "strength_training",
+            "weight_training": "strength_training",
+            "lifting": "strength_training",
+            "weight_lifting": "strength_training",
+            "cricket_training": "cricket_specific",
+            "cricket_fitness": "cricket_specific",
+            "cardiovascular": "cardio",
+            "aerobic": "cardio",
+            "cycling": "cardio",
+            "swimming": "cardio",
+            "stretching": "flexibility",
+            "yoga": "flexibility",
+            "pilates": "flexibility",
+            "fitness": "general_fitness",
+            "workout": "general_fitness",
+            "exercise": "general_fitness",
+        }
+
+        # Normalize the input
+        v_lower = v.lower().strip()
+        if v_lower in normalization_map:
+            return normalization_map[v_lower]
+
+        # If it's already a valid value, return it
+        valid_values = [
+            "running",
+            "strength_training",
+            "cricket_specific",
+            "cardio",
+            "flexibility",
+            "general_fitness",
+        ]
+        if v_lower in valid_values:
+            return v_lower
+
+        # Default fallback for unknown values
+        return "general_fitness"
+
+    @field_validator("intensity")
+    @classmethod
+    def validate_intensity(cls, v: str) -> str:
+        """Validate and normalize intensity to ensure it's one of the allowed values."""
+        v_lower = v.lower().strip()
+
+        # Mapping of variations to valid values
+        intensity_map = {
+            "very light": "low",
+            "light": "low",
+            "easy": "low",
+            "gentle": "low",
+            "minimal": "low",
+            "relaxed": "low",
+            "moderate": "medium",
+            "normal": "medium",
+            "average": "medium",
+            "standard": "medium",
+            "intense": "high",
+            "hard": "high",
+            "tough": "high",
+            "challenging": "high",
+            "vigorous": "high",
+            "difficult": "high",
+            "heavy": "high",
+        }
+
+        if v_lower in intensity_map:
+            return intensity_map[v_lower]
+
+        # If it's already valid, return it
+        if v_lower in ["low", "medium", "high"]:
+            return v_lower
+
+        # Default fallback
+        return "medium"
 
 
 class FitnessAnalytics(AppBaseModel):

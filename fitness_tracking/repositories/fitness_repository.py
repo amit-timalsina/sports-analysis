@@ -37,6 +37,176 @@ class FitnessRepository(
         """Initialize fitness repository."""
         super().__init__(FitnessEntry, session)
 
+    def _normalize_intensity(self, intensity_value: str | None) -> Intensity:
+        """Normalize AI-extracted intensity values to valid enum values."""
+        if not intensity_value:
+            return Intensity.MEDIUM
+
+        intensity_lower = intensity_value.lower().strip()
+
+        # Mapping of AI variations to valid enum values
+        intensity_mapping = {
+            # Low intensity variations
+            "low": Intensity.LOW,
+            "very light": Intensity.LOW,
+            "light": Intensity.LOW,
+            "easy": Intensity.LOW,
+            "gentle": Intensity.LOW,
+            "minimal": Intensity.LOW,
+            "relaxed": Intensity.LOW,
+            # Medium intensity variations
+            "medium": Intensity.MEDIUM,
+            "moderate": Intensity.MEDIUM,
+            "normal": Intensity.MEDIUM,
+            "average": Intensity.MEDIUM,
+            "standard": Intensity.MEDIUM,
+            # High intensity variations
+            "high": Intensity.HIGH,
+            "intense": Intensity.HIGH,
+            "hard": Intensity.HIGH,
+            "tough": Intensity.HIGH,
+            "challenging": Intensity.HIGH,
+            "vigorous": Intensity.HIGH,
+            "difficult": Intensity.HIGH,
+            "heavy": Intensity.HIGH,
+        }
+
+        # Try exact match first
+        if intensity_lower in intensity_mapping:
+            return intensity_mapping[intensity_lower]
+
+        # Try partial matches for compound descriptions
+        if any(word in intensity_lower for word in ["very", "extremely", "super"]):
+            if any(word in intensity_lower for word in ["light", "easy", "low"]):
+                return Intensity.LOW
+            if any(word in intensity_lower for word in ["hard", "intense", "high"]):
+                return Intensity.HIGH
+
+        # Default fallback
+        logger.warning("Unknown intensity value '%s', defaulting to MEDIUM", intensity_value)
+        return Intensity.MEDIUM
+
+    def _normalize_fitness_type(self, fitness_type_value: str | None) -> FitnessType:
+        """Normalize AI-extracted fitness type values to valid enum values."""
+        if not fitness_type_value:
+            return FitnessType.GENERAL_FITNESS
+
+        fitness_lower = fitness_type_value.lower().strip()
+
+        # Mapping of AI variations to valid enum values
+        fitness_mapping = {
+            # Running variations
+            "running": FitnessType.RUNNING,
+            "run": FitnessType.RUNNING,
+            "jog": FitnessType.RUNNING,
+            "jogging": FitnessType.RUNNING,
+            "sprint": FitnessType.RUNNING,
+            "sprinting": FitnessType.RUNNING,
+            # Strength training variations
+            "strength_training": FitnessType.STRENGTH_TRAINING,
+            "strength training": FitnessType.STRENGTH_TRAINING,
+            "weights": FitnessType.STRENGTH_TRAINING,
+            "weight training": FitnessType.STRENGTH_TRAINING,
+            "gym": FitnessType.STRENGTH_TRAINING,
+            "lifting": FitnessType.STRENGTH_TRAINING,
+            "weight lifting": FitnessType.STRENGTH_TRAINING,
+            # Cricket specific variations
+            "cricket_specific": FitnessType.CRICKET_SPECIFIC,
+            "cricket specific": FitnessType.CRICKET_SPECIFIC,
+            "cricket training": FitnessType.CRICKET_SPECIFIC,
+            "cricket fitness": FitnessType.CRICKET_SPECIFIC,
+            # Cardio variations
+            "cardio": FitnessType.CARDIO,
+            "cardiovascular": FitnessType.CARDIO,
+            "aerobic": FitnessType.CARDIO,
+            "cycling": FitnessType.CARDIO,
+            "swimming": FitnessType.CARDIO,
+            # Flexibility variations
+            "flexibility": FitnessType.FLEXIBILITY,
+            "stretching": FitnessType.FLEXIBILITY,
+            "yoga": FitnessType.FLEXIBILITY,
+            "pilates": FitnessType.FLEXIBILITY,
+            # General fitness variations
+            "general_fitness": FitnessType.GENERAL_FITNESS,
+            "general fitness": FitnessType.GENERAL_FITNESS,
+            "fitness": FitnessType.GENERAL_FITNESS,
+            "workout": FitnessType.GENERAL_FITNESS,
+            "exercise": FitnessType.GENERAL_FITNESS,
+        }
+
+        # Try exact match first
+        if fitness_lower in fitness_mapping:
+            return fitness_mapping[fitness_lower]
+
+        # Try partial matches
+        for key, value in fitness_mapping.items():
+            if key in fitness_lower or fitness_lower in key:
+                return value
+
+        # Default fallback
+        logger.warning(
+            "Unknown fitness type value '%s', defaulting to GENERAL_FITNESS",
+            fitness_type_value,
+        )
+        return FitnessType.GENERAL_FITNESS
+
+    def _normalize_energy_level(self, energy_value: Any) -> int:
+        """Normalize AI-extracted energy level values to valid 1-5 range."""
+        if energy_value is None:
+            return 3  # Default to middle value
+
+        # Handle different input types
+        if isinstance(energy_value, str):
+            energy_lower = energy_value.lower().strip()
+
+            # Text-based energy descriptions
+            text_mapping = {
+                "very low": 1,
+                "low": 1,
+                "poor": 1,
+                "tired": 1,
+                "exhausted": 1,
+                "below average": 2,
+                "somewhat low": 2,
+                "fair": 2,
+                "average": 3,
+                "medium": 3,
+                "normal": 3,
+                "okay": 3,
+                "moderate": 3,
+                "good": 4,
+                "high": 4,
+                "energetic": 4,
+                "strong": 4,
+                "very high": 5,
+                "excellent": 5,
+                "amazing": 5,
+                "outstanding": 5,
+                "fantastic": 5,
+            }
+
+            if energy_lower in text_mapping:
+                return text_mapping[energy_lower]
+
+            # Try to extract number from string
+            import re
+
+            number_match = re.search(r"(\d+)", energy_value)
+            if number_match:
+                try:
+                    energy_value = int(number_match.group(1))
+                except ValueError:
+                    return 3
+
+        # Handle numeric values
+        try:
+            energy_int = int(float(energy_value))
+            # Clamp to valid range 1-5
+            return max(1, min(5, energy_int))
+        except (ValueError, TypeError):
+            logger.warning("Invalid energy level value '%s', defaulting to 3", energy_value)
+            return 3
+
     async def create_from_voice_data(
         self,
         session_id: str,
@@ -54,7 +224,7 @@ class FitnessRepository(
             else:
                 data = voice_data
 
-            # Create fitness entry
+            # Create fitness entry with normalized data
             fitness_entry = FitnessEntry(
                 session_id=session_id,
                 user_id=user_id,
@@ -62,13 +232,13 @@ class FitnessRepository(
                 transcript=transcript,
                 confidence_score=confidence_score,
                 processing_duration=processing_duration,
-                # Fitness data
-                fitness_type=FitnessType(data.get("fitness_type", "general_fitness")),
-                duration_minutes=data.get("duration_minutes", 0),
-                intensity=Intensity(data.get("intensity", "medium")),
+                # Fitness data - all normalized
+                fitness_type=self._normalize_fitness_type(data.get("fitness_type")),
+                duration_minutes=max(1, int(data.get("duration_minutes", 0))),  # Ensure positive
+                intensity=self._normalize_intensity(data.get("intensity")),
                 details=data.get("details", ""),
                 mental_state=data.get("mental_state", "good"),
-                energy_level=data.get("energy_level", 3),
+                energy_level=self._normalize_energy_level(data.get("energy_level")),
                 distance_km=data.get("distance_km"),
                 location=data.get("location"),
                 notes=data.get("notes"),

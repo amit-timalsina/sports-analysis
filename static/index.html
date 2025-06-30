@@ -366,7 +366,20 @@
                     updateStatus('Processing data...', 'info');
                     break;
                     
+                case 'conversation_started':
+                    updateStatus(`✅ ${data.data.message}`, 'success');
+                    break;
+                    
+                case 'follow_up_question':
+                    handleFollowUpQuestion(data.data);
+                    break;
+                    
+                case 'conversation_completed':
+                    handleConversationCompleted(data.data);
+                    break;
+                    
                 case 'voice_processed_complete':
+                    // Legacy support for single-turn processing
                     showProcessedData(data.data);
                     updateStatus(`✅ Entry saved! ID: ${data.data.saved_entry_id}`, 'success');
                     
@@ -382,6 +395,98 @@
                     updateStatus(`❌ Error: ${data.message}`, 'error');
                     break;
             }
+        }
+
+        function handleFollowUpQuestion(questionData) {
+            console.log('Follow-up question received:', questionData);
+            
+            // Update status with question
+            updateStatus(`❓ ${questionData.question}`, 'info');
+            
+            // Show the question prominently in the UI
+            const statusEl = document.getElementById('status-message');
+            statusEl.innerHTML = `
+                <div style="text-align: left;">
+                    <strong>Follow-up Question (${questionData.turn_number + 1}):</strong><br>
+                    <em>"${questionData.question}"</em><br><br>
+                    <small>Collecting: ${questionData.field_target.replace('_', ' ')}<br>
+                    Progress: ${Math.round(questionData.completeness_score * 100)}% complete<br>
+                    ${questionData.instructions}</small>
+                </div>
+            `;
+            statusEl.className = 'status info';
+            
+            // Show collected data so far
+            if (Object.keys(questionData.collected_data).length > 0) {
+                showProcessedData({
+                    structured_data: questionData.collected_data,
+                    status: "collecting_more_data",
+                    message: `Data collected so far (${Object.keys(questionData.collected_data).length} fields):`
+                });
+            }
+            
+            // Enable recording for the next response
+            const recordBtn = document.getElementById('record-btn');
+            recordBtn.disabled = false;
+            recordBtn.classList.remove('recording');
+            recordBtn.textContent = '🎤';
+            
+            // Highlight the record button to encourage response
+            recordBtn.style.backgroundColor = 'var(--primary-color)';
+            recordBtn.style.transform = 'scale(1.1)';
+            setTimeout(() => {
+                recordBtn.style.backgroundColor = '';
+                recordBtn.style.transform = '';
+            }, 2000);
+            
+            // Auto-scroll to keep question visible
+            const modal = document.getElementById('voice-modal');
+            modal.scrollTop = modal.scrollHeight;
+        }
+
+        function handleConversationCompleted(completionData) {
+            console.log('Conversation completed:', completionData);
+            
+            // Show completion message
+            updateStatus(`✅ ${completionData.message}`, 'success');
+            
+            // Show final structured data
+            showProcessedData(completionData);
+            
+            // Show conversation metrics
+            const statusEl = document.getElementById('status-message');
+            statusEl.innerHTML = `
+                <div style="text-align: left;">
+                    <strong>✅ Conversation Complete!</strong><br>
+                    ${completionData.message}<br><br>
+                    <div style="background: #f0f9ff; padding: 10px; border-radius: 5px; margin: 10px 0;">
+                        <strong>📊 Session Metrics:</strong><br>
+                        • Total turns: ${completionData.total_turns}<br>
+                        • Data quality: ${Math.round(completionData.data_quality_score * 100)}%<br>
+                        • Efficiency: ${Math.round(completionData.conversation_efficiency * 100)}%<br>
+                        • Entry ID: ${completionData.saved_entry_id}
+                    </div>
+                    <small>You can close this modal or start a new recording.</small>
+                </div>
+            `;
+            statusEl.className = 'status success';
+            
+            // Disable recording button
+            const recordBtn = document.getElementById('record-btn');
+            recordBtn.disabled = true;
+            recordBtn.textContent = '✅';
+            
+            // Refresh dashboard after successful completion
+            setTimeout(() => {
+                if (window.mobileDashboard) {
+                    window.mobileDashboard.loadDashboardData();
+                }
+            }, 2000);
+            
+            // Auto-close modal after 5 seconds
+            setTimeout(() => {
+                closeVoiceModal();
+            }, 5000);
         }
 
         function updateStatus(message, type) {
@@ -494,6 +599,17 @@
             const loadingEl = document.getElementById('charts-loading');
             if (loadingEl) {
                 loadingEl.classList.add('hidden');
+            }
+        }
+
+        // API Request Helper Function
+        async function apiRequest(endpoint) {
+            try {
+                const response = await fetch(endpoint);
+                const data = await response.json();
+                return JSON.stringify(data, null, 2);
+            } catch (error) {
+                return `Error: ${error.message}`;
             }
         }
 

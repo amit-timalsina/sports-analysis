@@ -447,41 +447,64 @@ class OpenAIService:
             }
 
         try:
-            # Use settings-driven model configuration with structured outputs
+            # Enhanced system prompt for better structured output compliance
+            system_prompt = """You are an expert fitness tracker analyzer for young cricket players.
+
+CRITICAL: You MUST extract fitness data and return it in the EXACT format specified by the schema.
+
+For fitness_type, you MUST use EXACTLY one of these values:
+- "running" (for jog, jogging, run, sprint, etc.)
+- "strength_training" (for gym, weights, lifting, etc.) 
+- "cricket_specific" (for cricket training, cricket fitness)
+- "cardio" (for cardiovascular, aerobic, cycling, swimming)
+- "flexibility" (for stretching, yoga, pilates)
+- "general_fitness" (for general workout, exercise, fitness)
+
+For intensity, you MUST use EXACTLY one of: "low", "medium", "high"
+
+Map similar terms to the allowed values. DO NOT use any other values."""
+
+            # Use structured outputs with strict schema enforcement
             completion = await client.beta.chat.completions.parse(
                 model=settings.openai.gpt_model,
                 messages=[
                     {
                         "role": "system",
-                        "content": (
-                            "You are an expert fitness tracker analyzer specifically "
-                            "designed for young cricket players. "
-                            "Extract fitness activity information from the user's voice transcript. "
-                            "Context: This is from a 15-year-old cricket player in Nepal "
-                            "tracking their fitness journey. "
-                            "Be precise and accurate. The schema will enforce valid values automatically."
-                        ),
+                        "content": system_prompt,
                     },
                     {
                         "role": "user",
-                        "content": f"Extract fitness information from this transcript: {transcript}",
+                        "content": f"Extract fitness information from this transcript. The user is a 15-year-old cricket player in Nepal: {transcript}",
                     },
                 ],
                 response_format=FitnessDataExtraction,
-                temperature=settings.openai.temperature,
+                temperature=0.1,  # Lower temperature for more consistent extraction
                 max_tokens=settings.openai.max_tokens,
             )
 
-            # Better error handling for parsing
-            if not completion.choices or not completion.choices[0].message.parsed:
-                logger.warning("No parsed response received from OpenAI")
+            # Enhanced error handling for parsing
+            if not completion.choices:
+                logger.warning("No choices in OpenAI response")
                 return self._extract_fitness_fallback(transcript)
 
-            # Parse the structured response - schema validation is automatic
-            fitness_data = completion.choices[0].message.parsed
+            choice = completion.choices[0]
+            if not choice.message.parsed:
+                logger.warning("No parsed response received from OpenAI")
+                # Check if there was a parsing error
+                if choice.message.refusal:
+                    logger.warning("OpenAI refused to parse: %s", choice.message.refusal)
+                return self._extract_fitness_fallback(transcript)
+
+            # Parse the structured response - schema validation is automatic via Pydantic
+            fitness_data = choice.message.parsed
+
+            logger.info(
+                "Successfully extracted structured fitness data: fitness_type=%s",
+                fitness_data.fitness_type,
+            )
 
             # Convert to dictionary format expected by the system
-            return {
+            result = {
                 "fitness_type": fitness_data.fitness_type,
                 "duration_minutes": fitness_data.duration_minutes,
                 "intensity": fitness_data.intensity,
@@ -494,39 +517,85 @@ class OpenAIService:
                 "timestamp": datetime.now(UTC).isoformat(),
             }
 
-        except Exception:
-            logger.exception("Fitness data extraction failed")
+            # Final validation to ensure we have valid enum values
+            if fitness_data.fitness_type not in [
+                "running",
+                "strength_training",
+                "cricket_specific",
+                "cardio",
+                "flexibility",
+                "general_fitness",
+            ]:
+                logger.warning(
+                    "Invalid fitness_type received: %s, using fallback",
+                    fitness_data.fitness_type,
+                )
+                return self._extract_fitness_fallback(transcript)
+
+            if fitness_data.intensity not in ["low", "medium", "high"]:
+                logger.warning(
+                    "Invalid intensity received: %s, using fallback",
+                    fitness_data.intensity,
+                )
+                return self._extract_fitness_fallback(transcript)
+
+            return result
+
+        except Exception as e:
+            logger.exception("Fitness data extraction failed: %s", e)
             return self._extract_fitness_fallback(transcript)
 
     def _extract_fitness_fallback(self, transcript: str) -> dict[str, Any]:
-        """Fallback fitness data extraction using keyword matching."""
+        """Fallback fitness data extraction using keyword matching with guaranteed valid values."""
         logger.info("Using fallback fitness data extraction with keyword matching")
 
         transcript_lower = transcript.lower()
 
-        # Simple keyword-based extraction
-        fitness_type = "general_fitness"
-        if any(word in transcript_lower for word in ["run", "running", "jog", "cardio"]):
+        # Ensure we return only valid enum values
+        fitness_type = "general_fitness"  # Safe default
+        if any(word in transcript_lower for word in ["run", "running", "jog", "jogging", "sprint"]):
             fitness_type = "running"
-        elif any(word in transcript_lower for word in ["gym", "weight", "strength", "lift"]):
+        elif any(
+            word in transcript_lower for word in ["gym", "weight", "strength", "lift", "lifting"]
+        ):
             fitness_type = "strength_training"
-        elif any(word in transcript_lower for word in ["bat", "batting", "wicket", "bowl"]):
+        elif any(
+            word in transcript_lower for word in ["cricket", "bat", "batting", "wicket", "bowl"]
+        ):
             fitness_type = "cricket_specific"
+        elif any(
+            word in transcript_lower for word in ["cardio", "cardiovascular", "cycle", "swim"]
+        ):
+            fitness_type = "cardio"
+        elif any(
+            word in transcript_lower for word in ["stretch", "yoga", "flexibility", "pilates"]
+        ):
+            fitness_type = "flexibility"
 
         # Extract duration (look for numbers followed by "minute" or "min")
         duration_match = re.search(r"(\d+)\s*(?:minute|min)", transcript_lower)
         duration_minutes = int(duration_match.group(1)) if duration_match else 30
 
+        # Ensure valid intensity
+        intensity = "medium"  # Safe default
+        if any(word in transcript_lower for word in ["easy", "light", "low", "gentle"]):
+            intensity = "low"
+        elif any(
+            word in transcript_lower for word in ["hard", "intense", "high", "tough", "difficult"]
+        ):
+            intensity = "high"
+
         return {
             "fitness_type": fitness_type,
-            "duration_minutes": duration_minutes,
-            "intensity": "medium",
+            "duration_minutes": max(1, min(300, duration_minutes)),  # Ensure valid range
+            "intensity": intensity,
             "details": f"Extracted from transcript: {transcript[:100]}...",
             "mental_state": "good",
             "energy_level": 3,
             "timestamp": datetime.now(UTC).isoformat(),
         }
 
+    @observe(capture_input=True, capture_output=True)
     async def extract_cricket_coaching_data(self, transcript: str) -> dict[str, Any]:
         """Extract structured cricket coaching data from transcript."""
         client = self._get_client()
