@@ -217,16 +217,9 @@ class CricketCoachingEntryResponse(AppBaseModel):
 class CricketCoachingDataExtraction(AppBaseModel):
     """Schema for structured cricket coaching data extraction from voice."""
 
-    session_type: Literal[
-        "batting_drills",
-        "wicket_keeping",
-        "netting",
-        "personal_coaching",
-        "team_practice",
-        "other",
-    ] = Field(
+    session_type: str = Field(
         ...,
-        description="Type of cricket session - must be one of the valid session types",
+        description="Type of cricket session. Must be exactly one of: batting_drills, wicket_keeping, netting, personal_coaching, team_practice, other. Map similar terms: batting/technique -> batting_drills, keeping/gloves -> wicket_keeping, etc.",
     )
     duration_minutes: int = Field(..., description="Duration in minutes")
     what_went_well: str = Field(..., description="What went well in the session")
@@ -415,9 +408,9 @@ class CricketMatchEntryResponse(AppBaseModel):
 class CricketMatchDataExtraction(AppBaseModel):
     """Schema for structured cricket match data extraction from voice."""
 
-    match_type: Literal["practice", "tournament", "school", "club", "other"] = Field(
+    match_type: str = Field(
         ...,
-        description="Type of match - must be one of the valid match types",
+        description="Type of match. Must be exactly one of: practice, tournament, school, club, other. Map similar terms: ODI/T20/Test -> tournament, friendly -> practice, etc.",
     )
     opposition_strength: int = Field(..., ge=1, le=10, description="Opposition strength 1-10")
     pre_match_nerves: int = Field(..., ge=1, le=10, description="Pre-match nerves level")
@@ -585,9 +578,9 @@ class RestDayEntryResponse(AppBaseModel):
 class RestDayDataExtraction(AppBaseModel):
     """Schema for structured rest day data extraction from voice."""
 
-    rest_type: Literal["complete_rest", "active_recovery", "injury_recovery"] = Field(
+    rest_type: str = Field(
         ...,
-        description="Type of rest day - must be one of the valid rest types",
+        description="Type of rest day. Must be exactly one of: complete_rest, active_recovery, injury_recovery. Map similar terms: full rest/total rest -> complete_rest, light activity -> active_recovery, hurt/injured -> injury_recovery.",
     )
     physical_state: str = Field(..., description="Physical state during rest")
     fatigue_level: int = Field(..., ge=1, le=10, description="Fatigue level 1-10")

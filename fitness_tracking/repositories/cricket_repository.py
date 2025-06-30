@@ -57,6 +57,74 @@ class CricketCoachingRepository(
         """Initialize cricket coaching repository."""
         super().__init__(CricketCoachingEntry, session)
 
+    def _normalize_session_type(self, session_type: str) -> CricketSessionType:
+        """Normalize session type strings to valid CricketSessionType enum values."""
+        session_type_lower = session_type.lower().strip()
+
+        # Mapping of common variations to valid enum values
+        session_type_mapping = {
+            # Batting variations
+            "batting": CricketSessionType.BATTING_DRILLS,
+            "batting_drills": CricketSessionType.BATTING_DRILLS,
+            "batting drills": CricketSessionType.BATTING_DRILLS,
+            "batting practice": CricketSessionType.BATTING_DRILLS,
+            "bat": CricketSessionType.BATTING_DRILLS,
+            "stroke play": CricketSessionType.BATTING_DRILLS,
+            "technique": CricketSessionType.BATTING_DRILLS,
+            # Wicket keeping variations
+            "keeping": CricketSessionType.WICKET_KEEPING,
+            "wicket_keeping": CricketSessionType.WICKET_KEEPING,
+            "wicket keeping": CricketSessionType.WICKET_KEEPING,
+            "wicketkeeping": CricketSessionType.WICKET_KEEPING,
+            "gloves": CricketSessionType.WICKET_KEEPING,
+            "keeper": CricketSessionType.WICKET_KEEPING,
+            # Netting variations
+            "nets": CricketSessionType.NETTING,
+            "netting": CricketSessionType.NETTING,
+            "net session": CricketSessionType.NETTING,
+            "net practice": CricketSessionType.NETTING,
+            # Personal coaching variations
+            "personal": CricketSessionType.PERSONAL_COACHING,
+            "personal_coaching": CricketSessionType.PERSONAL_COACHING,
+            "personal coaching": CricketSessionType.PERSONAL_COACHING,
+            "1-on-1": CricketSessionType.PERSONAL_COACHING,
+            "one on one": CricketSessionType.PERSONAL_COACHING,
+            "individual": CricketSessionType.PERSONAL_COACHING,
+            "private": CricketSessionType.PERSONAL_COACHING,
+            # Team practice variations
+            "team": CricketSessionType.TEAM_PRACTICE,
+            "team_practice": CricketSessionType.TEAM_PRACTICE,
+            "team practice": CricketSessionType.TEAM_PRACTICE,
+            "squad": CricketSessionType.TEAM_PRACTICE,
+            "group": CricketSessionType.TEAM_PRACTICE,
+            "training": CricketSessionType.TEAM_PRACTICE,
+            # Other/general variations
+            "other": CricketSessionType.OTHER,
+            "general": CricketSessionType.OTHER,
+            "mixed": CricketSessionType.OTHER,
+            "various": CricketSessionType.OTHER,
+        }
+
+        normalized = session_type_mapping.get(session_type_lower)
+        if normalized:
+            return normalized
+
+        # Try partial matching for compound terms
+        if any(keyword in session_type_lower for keyword in ["batting", "bat", "stroke"]):
+            return CricketSessionType.BATTING_DRILLS
+        if any(keyword in session_type_lower for keyword in ["keeping", "keeper", "glove"]):
+            return CricketSessionType.WICKET_KEEPING
+        if any(keyword in session_type_lower for keyword in ["net", "practice"]):
+            return CricketSessionType.NETTING
+        if any(keyword in session_type_lower for keyword in ["team", "squad", "group"]):
+            return CricketSessionType.TEAM_PRACTICE
+        if any(keyword in session_type_lower for keyword in ["personal", "individual", "private"]):
+            return CricketSessionType.PERSONAL_COACHING
+
+        # Default fallback
+        logger.warning("Unknown session type '%s', defaulting to 'other'", session_type)
+        return CricketSessionType.OTHER
+
     async def create_from_voice_data(
         self,
         session_id: str,
@@ -74,6 +142,9 @@ class CricketCoachingRepository(
             else:
                 data = voice_data
 
+            # Normalize session type
+            session_type = self._normalize_session_type(data.get("session_type", "other"))
+
             # Create cricket coaching entry
             coaching_entry = CricketCoachingEntry(
                 session_id=session_id,
@@ -83,18 +154,18 @@ class CricketCoachingRepository(
                 confidence_score=confidence_score,
                 processing_duration=processing_duration,
                 # Cricket coaching data
-                session_type=CricketSessionType(data.get("session_type", "batting_drills")),
-                duration_minutes=data.get("duration_minutes", 60),
+                session_type=session_type,
+                duration_minutes=data.get("duration_minutes", 30),
                 what_went_well=data.get("what_went_well", ""),
                 areas_for_improvement=data.get("areas_for_improvement", ""),
-                skills_practiced=data.get("skills_practiced", ""),
+                coach_feedback=data.get("coach_feedback"),
                 self_assessment_score=data.get("self_assessment_score", 5),
+                skills_practiced=data.get("skills_practiced", ""),
+                difficulty_level=data.get("difficulty_level", 5),
                 confidence_level=data.get("confidence_level", 5),
                 focus_level=data.get("focus_level", 5),
+                learning_satisfaction=data.get("learning_satisfaction", 5),
                 mental_state=data.get("mental_state", "good"),
-                coach_feedback=data.get("coach_feedback"),
-                difficulty_level=data.get("difficulty_level") or 5,
-                learning_satisfaction=data.get("learning_satisfaction") or 5,
                 notes=data.get("notes"),
             )
 
@@ -152,6 +223,96 @@ class CricketMatchRepository(
         """Initialize cricket match repository."""
         super().__init__(CricketMatchEntry, session)
 
+    def _normalize_match_type(self, match_type: str) -> MatchType:
+        """Normalize match type strings to valid MatchType enum values."""
+        match_type_lower = match_type.lower().strip()
+
+        # Mapping of common variations to valid enum values
+        match_type_mapping = {
+            # Practice variations
+            "practice": MatchType.PRACTICE,
+            "practice match": MatchType.PRACTICE,
+            "friendly": MatchType.PRACTICE,
+            "warm up": MatchType.PRACTICE,
+            "warmup": MatchType.PRACTICE,
+            "trial": MatchType.PRACTICE,
+            # Tournament variations
+            "tournament": MatchType.TOURNAMENT,
+            "competition": MatchType.TOURNAMENT,
+            "championship": MatchType.TOURNAMENT,
+            "cup": MatchType.TOURNAMENT,
+            "final": MatchType.TOURNAMENT,
+            "semi-final": MatchType.TOURNAMENT,
+            "quarter-final": MatchType.TOURNAMENT,
+            "playoff": MatchType.TOURNAMENT,
+            # International/Professional formats (map to tournament)
+            "odi": MatchType.TOURNAMENT,
+            "one day": MatchType.TOURNAMENT,
+            "one-day": MatchType.TOURNAMENT,
+            "t20": MatchType.TOURNAMENT,
+            "twenty20": MatchType.TOURNAMENT,
+            "test": MatchType.TOURNAMENT,
+            "test match": MatchType.TOURNAMENT,
+            "international": MatchType.TOURNAMENT,
+            "domestic": MatchType.TOURNAMENT,
+            "first class": MatchType.TOURNAMENT,
+            "list a": MatchType.TOURNAMENT,
+            # School variations
+            "school": MatchType.SCHOOL,
+            "inter school": MatchType.SCHOOL,
+            "inter-school": MatchType.SCHOOL,
+            "school team": MatchType.SCHOOL,
+            "college": MatchType.SCHOOL,
+            "university": MatchType.SCHOOL,
+            "academic": MatchType.SCHOOL,
+            # Club variations
+            "club": MatchType.CLUB,
+            "club match": MatchType.CLUB,
+            "local": MatchType.CLUB,
+            "community": MatchType.CLUB,
+            "recreational": MatchType.CLUB,
+            "league": MatchType.CLUB,
+            "district": MatchType.CLUB,
+            "regional": MatchType.CLUB,
+            # Other variations
+            "other": MatchType.OTHER,
+            "casual": MatchType.OTHER,
+            "social": MatchType.OTHER,
+            "exhibition": MatchType.OTHER,
+        }
+
+        normalized = match_type_mapping.get(match_type_lower)
+        if normalized:
+            return normalized
+
+        # Try partial matching for compound terms
+        if any(
+            keyword in match_type_lower for keyword in ["practice", "friendly", "warm", "trial"]
+        ):
+            return MatchType.PRACTICE
+        if any(
+            keyword in match_type_lower
+            for keyword in ["tournament", "competition", "cup", "final", "championship"]
+        ) or any(
+            keyword in match_type_lower
+            for keyword in ["odi", "t20", "test", "international", "first class"]
+        ):
+            return MatchType.TOURNAMENT
+        if any(
+            keyword in match_type_lower
+            for keyword in ["school", "college", "university", "academic"]
+        ):
+            return MatchType.SCHOOL
+        if any(
+            keyword in match_type_lower
+            for keyword in ["club", "local", "community", "league", "district"]
+        ):
+            return MatchType.CLUB
+
+        # Default fallback
+        logger.warning("Unknown match type '%s', defaulting to 'other'", match_type)
+        return MatchType.OTHER
+
     async def create_from_voice_data(
         self,
         session_id: str,
@@ -169,6 +330,9 @@ class CricketMatchRepository(
             else:
                 data = voice_data
 
+            # Normalize match type
+            match_type = self._normalize_match_type(data.get("match_type", "school"))
+
             # Create cricket match entry
             match_entry = CricketMatchEntry(
                 session_id=session_id,
@@ -178,7 +342,7 @@ class CricketMatchRepository(
                 confidence_score=confidence_score,
                 processing_duration=processing_duration,
                 # Cricket match data
-                match_type=MatchType(data.get("match_type", "school")),
+                match_type=match_type,
                 opposition_strength=data.get("opposition_strength", 5),
                 pre_match_nerves=data.get("pre_match_nerves", 5),
                 post_match_satisfaction=data.get("post_match_satisfaction", 5),
@@ -248,6 +412,68 @@ class RestDayRepository(
         """Initialize rest day repository."""
         super().__init__(RestDayEntry, session)
 
+    def _normalize_rest_type(self, rest_type: str) -> RestType:
+        """Normalize rest type strings to valid RestType enum values."""
+        rest_type_lower = rest_type.lower().strip()
+
+        # Mapping of common variations to valid enum values
+        rest_type_mapping = {
+            # Complete rest variations
+            "complete_rest": RestType.COMPLETE_REST,
+            "complete rest": RestType.COMPLETE_REST,
+            "full rest": RestType.COMPLETE_REST,
+            "total rest": RestType.COMPLETE_REST,
+            "no activity": RestType.COMPLETE_REST,
+            "rest": RestType.COMPLETE_REST,
+            "off": RestType.COMPLETE_REST,
+            "lazy": RestType.COMPLETE_REST,
+            "chill": RestType.COMPLETE_REST,
+            # Active recovery variations
+            "active_recovery": RestType.ACTIVE_RECOVERY,
+            "active recovery": RestType.ACTIVE_RECOVERY,
+            "light activity": RestType.ACTIVE_RECOVERY,
+            "easy day": RestType.ACTIVE_RECOVERY,
+            "gentle": RestType.ACTIVE_RECOVERY,
+            "walk": RestType.ACTIVE_RECOVERY,
+            "walking": RestType.ACTIVE_RECOVERY,
+            "stretch": RestType.ACTIVE_RECOVERY,
+            "stretching": RestType.ACTIVE_RECOVERY,
+            "yoga": RestType.ACTIVE_RECOVERY,
+            "mobility": RestType.ACTIVE_RECOVERY,
+            # Injury recovery variations
+            "injury_recovery": RestType.INJURY_RECOVERY,
+            "injury recovery": RestType.INJURY_RECOVERY,
+            "hurt": RestType.INJURY_RECOVERY,
+            "injured": RestType.INJURY_RECOVERY,
+            "pain": RestType.INJURY_RECOVERY,
+            "sore": RestType.INJURY_RECOVERY,
+            "rehab": RestType.INJURY_RECOVERY,
+            "rehabilitation": RestType.INJURY_RECOVERY,
+            "healing": RestType.INJURY_RECOVERY,
+            "recovery": RestType.INJURY_RECOVERY,
+        }
+
+        normalized = rest_type_mapping.get(rest_type_lower)
+        if normalized:
+            return normalized
+
+        # Try partial matching for compound terms
+        if any(keyword in rest_type_lower for keyword in ["complete", "full", "total", "off"]):
+            return RestType.COMPLETE_REST
+        if any(
+            keyword in rest_type_lower
+            for keyword in ["active", "light", "gentle", "walk", "stretch", "yoga"]
+        ):
+            return RestType.ACTIVE_RECOVERY
+        if any(
+            keyword in rest_type_lower for keyword in ["injury", "hurt", "pain", "rehab", "healing"]
+        ):
+            return RestType.INJURY_RECOVERY
+
+        # Default fallback
+        logger.warning("Unknown rest type '%s', defaulting to 'complete_rest'", rest_type)
+        return RestType.COMPLETE_REST
+
     async def create_from_voice_data(
         self,
         session_id: str,
@@ -265,6 +491,9 @@ class RestDayRepository(
             else:
                 data = voice_data
 
+            # Normalize rest type
+            rest_type = self._normalize_rest_type(data.get("rest_type", "complete_rest"))
+
             # Create rest day entry
             rest_entry = RestDayEntry(
                 session_id=session_id,
@@ -274,7 +503,7 @@ class RestDayRepository(
                 confidence_score=confidence_score,
                 processing_duration=processing_duration,
                 # Rest day data
-                rest_type=RestType(data.get("rest_type", "complete_rest")),
+                rest_type=rest_type,
                 physical_state=data.get("physical_state", ""),
                 fatigue_level=data.get("fatigue_level", 5),
                 energy_level=data.get("energy_level", 5),

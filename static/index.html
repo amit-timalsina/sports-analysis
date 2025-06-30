@@ -171,20 +171,60 @@
             <section class="card">
                 <h2>📋 Your Activity Log</h2>
                 <p style="color: var(--text-secondary); margin-bottom: var(--spacing-lg);">
-                    Browse through your logged activities
+                    Browse through your logged activities with beautiful, user-friendly cards
                 </p>
                 
-                <div class="api-section">
-                    <div>
-                        <h3 style="margin-bottom: 12px; color: var(--primary-color);">Fitness Entries</h3>
-                        <button class="btn" onclick="loadFitnessEntries()">🏃 Load Fitness Entries</button>
-                        <div id="fitness-entries-response" class="response-area hidden"></div>
+                <!-- Entry Statistics -->
+                <div id="entry-stats" class="hidden" style="margin-bottom: var(--spacing-lg);">
+                    <div class="stat-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); gap: var(--spacing-sm);">
+                        <div class="stat-card">
+                            <div class="stat-number" id="total-entries">0</div>
+                            <div class="stat-label">Total</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-number" id="fitness-count">0</div>
+                            <div class="stat-label">🏃 Fitness</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-number" id="cricket-count">0</div>
+                            <div class="stat-label">🏏 Cricket</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-number" id="match-count">0</div>
+                            <div class="stat-label">🏆 Matches</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-number" id="rest-count">0</div>
+                            <div class="stat-label">😴 Rest</div>
+                        </div>
                     </div>
-                    <div style="margin-top: var(--spacing-lg);">
-                        <h3 style="margin-bottom: 12px; color: var(--primary-color);">Cricket Sessions</h3>
-                        <button class="btn" onclick="loadCricketCoaching()">🏏 Load Coaching Sessions</button>
-                        <div id="cricket-coaching-response" class="response-area hidden"></div>
+                </div>
+                
+                <!-- Entry Search -->
+                <div class="entry-search">
+                    <input type="text" id="entry-search-input" placeholder="Search your activities..." autocomplete="off">
+                </div>
+                
+                <!-- Activity Type Filter -->
+                <div class="entry-filters" style="margin-bottom: var(--spacing-lg);">
+                    <button class="filter-btn active" data-filter="all">📊 All Activities</button>
+                    <button class="filter-btn" data-filter="fitness">🏃 Fitness</button>
+                    <button class="filter-btn" data-filter="cricket_coaching">🏏 Cricket Practice</button>
+                    <button class="filter-btn" data-filter="cricket_match">🏆 Matches</button>
+                    <button class="filter-btn" data-filter="rest_day">😴 Rest Days</button>
+                </div>
+                
+                <!-- Entries Container -->
+                <div id="entries-container">
+                    <div class="entries-loading">
+                        <div class="loading"></div>
+                        <p>Loading your activities...</p>
                     </div>
+                </div>
+                
+                <!-- Load More Button -->
+                <div id="load-more-container" class="hidden" style="text-align: center; margin-top: var(--spacing-lg);">
+                    <button id="load-more-btn" class="btn secondary">📥 Load More Entries</button>
                 </div>
             </section>
         </div>
@@ -359,6 +399,7 @@
                     
                 case 'audio_chunk_received':
                     updateStatus(`Recording... (${data.data.total_accumulated} bytes)`, 'info');
+                    updateRecordingVisualization(true);
                     break;
                     
                 case 'transcript_ready':
@@ -400,44 +441,46 @@
         function handleFollowUpQuestion(questionData) {
             console.log('Follow-up question received:', questionData);
             
-            // Update status with question
-            updateStatus(`❓ ${questionData.question}`, 'info');
+            // Create conversation flow visualization
+            addConversationTurn(questionData.turn_number, questionData.question, 'question');
             
-            // Show the question prominently in the UI
+            // Update status with question
+            updateStatus(`❓ Follow-up Question ${questionData.turn_number + 1}`, 'info');
+            
+            // Show the question prominently in the UI with enhanced styling
             const statusEl = document.getElementById('status-message');
             statusEl.innerHTML = `
-                <div style="text-align: left;">
-                    <strong>Follow-up Question (${questionData.turn_number + 1}):</strong><br>
-                    <em>"${questionData.question}"</em><br><br>
-                    <small>Collecting: ${questionData.field_target.replace('_', ' ')}<br>
-                    Progress: ${Math.round(questionData.completeness_score * 100)}% complete<br>
-                    ${questionData.instructions}</small>
+                <div class="conversation-question">
+                    <div class="question-header">
+                        <span class="question-icon">🤖</span>
+                        <strong>Follow-up Question ${questionData.turn_number + 1}</strong>
+                        <span class="progress-badge">${Math.round(questionData.completeness_score * 100)}% complete</span>
+                    </div>
+                    <div class="question-text">"${questionData.question}"</div>
+                    <div class="question-footer">
+                        <span class="collecting-field">Collecting: ${questionData.field_target.replace('_', ' ')}</span>
+                        <span class="instruction-text">${questionData.instructions}</span>
+                    </div>
                 </div>
             `;
-            statusEl.className = 'status info';
+            statusEl.className = 'status info conversation-status';
             
-            // Show collected data so far
+            // Show collected data so far with enhanced visualization
             if (Object.keys(questionData.collected_data).length > 0) {
-                showProcessedData({
-                    structured_data: questionData.collected_data,
-                    status: "collecting_more_data",
-                    message: `Data collected so far (${Object.keys(questionData.collected_data).length} fields):`
-                });
+                showCollectedData(questionData.collected_data, questionData.turn_number);
             }
             
-            // Enable recording for the next response
+            // Enable recording for the next response with visual feedback
             const recordBtn = document.getElementById('record-btn');
             recordBtn.disabled = false;
             recordBtn.classList.remove('recording');
             recordBtn.textContent = '🎤';
             
-            // Highlight the record button to encourage response
-            recordBtn.style.backgroundColor = 'var(--primary-color)';
-            recordBtn.style.transform = 'scale(1.1)';
+            // Add pulsing effect to encourage response
+            recordBtn.classList.add('ready-to-record');
             setTimeout(() => {
-                recordBtn.style.backgroundColor = '';
-                recordBtn.style.transform = '';
-            }, 2000);
+                recordBtn.classList.remove('ready-to-record');
+            }, 3000);
             
             // Auto-scroll to keep question visible
             const modal = document.getElementById('voice-modal');
@@ -447,34 +490,53 @@
         function handleConversationCompleted(completionData) {
             console.log('Conversation completed:', completionData);
             
-            // Show completion message
-            updateStatus(`✅ ${completionData.message}`, 'success');
+            // Add final turn to conversation flow
+            addConversationTurn(completionData.total_turns, '✅ Conversation Complete!', 'completion');
             
-            // Show final structured data
+            // Show celebration animation
+            showCompletionCelebration();
+            
+            // Show completion message with enhanced styling
+            updateStatus(`🎉 Success!`, 'success');
+            
+            // Show final structured data with beautiful formatting
             showProcessedData(completionData);
             
-            // Show conversation metrics
+            // Show comprehensive completion summary
             const statusEl = document.getElementById('status-message');
             statusEl.innerHTML = `
-                <div style="text-align: left;">
-                    <strong>✅ Conversation Complete!</strong><br>
-                    ${completionData.message}<br><br>
-                    <div style="background: #f0f9ff; padding: 10px; border-radius: 5px; margin: 10px 0;">
-                        <strong>📊 Session Metrics:</strong><br>
-                        • Total turns: ${completionData.total_turns}<br>
-                        • Data quality: ${Math.round(completionData.data_quality_score * 100)}%<br>
-                        • Efficiency: ${Math.round(completionData.conversation_efficiency * 100)}%<br>
-                        • Entry ID: ${completionData.saved_entry_id}
+                <div class="completion-summary">
+                    <div class="completion-header">
+                        <span class="completion-icon">🎉</span>
+                        <strong>Activity Logged Successfully!</strong>
                     </div>
-                    <small>You can close this modal or start a new recording.</small>
+                    <div class="completion-message">${completionData.message}</div>
+                    <div class="completion-metrics">
+                        <div class="metric-card">
+                            <span class="metric-value">${completionData.total_turns}</span>
+                            <span class="metric-label">Turns</span>
+                        </div>
+                        <div class="metric-card">
+                            <span class="metric-value">${Math.round(completionData.data_quality_score * 100)}%</span>
+                            <span class="metric-label">Quality</span>
+                        </div>
+                        <div class="metric-card">
+                            <span class="metric-value">${Math.round(completionData.conversation_efficiency * 100)}%</span>
+                            <span class="metric-label">Efficiency</span>
+                        </div>
+                    </div>
+                    <div class="completion-footer">
+                        <span class="entry-id">Entry ID: ${completionData.saved_entry_id}</span>
+                    </div>
                 </div>
             `;
-            statusEl.className = 'status success';
+            statusEl.className = 'status success completion-status';
             
-            // Disable recording button
+            // Disable recording button with success state
             const recordBtn = document.getElementById('record-btn');
             recordBtn.disabled = true;
             recordBtn.textContent = '✅';
+            recordBtn.classList.add('completed');
             
             // Refresh dashboard after successful completion
             setTimeout(() => {
@@ -483,10 +545,198 @@
                 }
             }, 2000);
             
-            // Auto-close modal after 5 seconds
+            // Auto-close modal after 8 seconds with countdown
+            showAutoCloseCountdown(8);
+        }
+
+        function addConversationTurn(turnNumber, content, type) {
+            let flowContainer = document.getElementById('conversation-flow');
+            if (!flowContainer) {
+                // Create conversation flow container if it doesn't exist
+                flowContainer = document.createElement('div');
+                flowContainer.id = 'conversation-flow';
+                flowContainer.className = 'conversation-flow';
+                
+                const flowHeader = document.createElement('h4');
+                flowHeader.textContent = '💬 Conversation Flow';
+                flowHeader.style.marginBottom = 'var(--spacing-md)';
+                flowContainer.appendChild(flowHeader);
+                
+                // Insert after transcript display
+                const transcriptEl = document.getElementById('transcript-display');
+                transcriptEl.parentNode.insertBefore(flowContainer, transcriptEl.nextSibling);
+                
+                flowContainer.classList.remove('hidden');
+            }
+            
+            const turnEl = document.createElement('div');
+            turnEl.className = 'conversation-turn';
+            
+            const indicator = document.createElement('div');
+            indicator.className = 'turn-indicator';
+            indicator.textContent = turnNumber;
+            
+            const content_el = document.createElement('div');
+            content_el.className = 'turn-content';
+            
+            if (type === 'question') {
+                content_el.innerHTML = `<div class="turn-question">${content}</div>`;
+                indicator.style.background = 'var(--primary-color)';
+            } else if (type === 'completion') {
+                content_el.innerHTML = `<div class="turn-completion">${content}</div>`;
+                indicator.style.background = 'var(--success-color)';
+                indicator.textContent = '✓';
+            } else {
+                content_el.textContent = content;
+            }
+            
+            turnEl.appendChild(indicator);
+            turnEl.appendChild(content_el);
+            flowContainer.appendChild(turnEl);
+            
+            // Smooth scroll to new turn
             setTimeout(() => {
-                closeVoiceModal();
-            }, 5000);
+                turnEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }, 100);
+        }
+
+        function showCollectedData(collectedData, turnNumber) {
+            const dataEl = document.getElementById('processed-data');
+            if (!dataEl) return;
+            
+            const fieldsCount = Object.keys(collectedData).length;
+            const dataContent = document.getElementById('processed-data-content');
+            
+            // Format collected data in a more user-friendly way
+            const formattedData = Object.entries(collectedData).map(([key, value]) => {
+                const label = key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+                return `${label}: ${value}`;
+            }).join('\n');
+            
+            dataContent.innerHTML = `
+                <div class="collected-data-header">
+                    <strong>📊 Data Collected So Far (Turn ${turnNumber})</strong>
+                    <span class="field-count">${fieldsCount} fields</span>
+                </div>
+                <div class="collected-data-content">${formattedData}</div>
+            `;
+            
+            dataEl.classList.remove('hidden');
+            dataEl.style.borderColor = 'var(--primary-color)';
+        }
+
+        function showCompletionCelebration() {
+            // Add floating celebration elements
+            const modal = document.querySelector('.voice-content');
+            for (let i = 0; i < 6; i++) {
+                setTimeout(() => {
+                    createCelebrationElement(modal);
+                }, i * 200);
+            }
+        }
+
+        function createCelebrationElement(container) {
+            const celebration = document.createElement('div');
+            celebration.textContent = ['🎉', '✨', '🎊', '⭐', '💫'][Math.floor(Math.random() * 5)];
+            celebration.style.cssText = `
+                position: absolute;
+                top: ${Math.random() * 20 + 10}%;
+                left: ${Math.random() * 80 + 10}%;
+                font-size: 1.5rem;
+                pointer-events: none;
+                z-index: 10;
+                animation: celebrationFloat 2s ease-out forwards;
+            `;
+            
+            container.style.position = 'relative';
+            container.appendChild(celebration);
+            
+            setTimeout(() => {
+                if (celebration.parentNode) {
+                    celebration.parentNode.removeChild(celebration);
+                }
+            }, 2000);
+        }
+
+        function showAutoCloseCountdown(seconds) {
+            let timeLeft = seconds;
+            const countdownEl = document.createElement('div');
+            countdownEl.className = 'auto-close-countdown';
+            countdownEl.innerHTML = `
+                <div class="countdown-text">Auto-closing in <span id="countdown-number">${timeLeft}</span> seconds</div>
+                <button class="btn secondary small" onclick="cancelAutoClose()">Stay Open</button>
+            `;
+            
+            document.querySelector('.voice-content').appendChild(countdownEl);
+            
+            const countdownInterval = setInterval(() => {
+                timeLeft--;
+                const numberEl = document.getElementById('countdown-number');
+                if (numberEl) {
+                    numberEl.textContent = timeLeft;
+                }
+                
+                if (timeLeft <= 0) {
+                    clearInterval(countdownInterval);
+                    closeVoiceModal();
+                }
+            }, 1000);
+            
+            // Store interval ID for potential cancellation
+            window.autoCloseInterval = countdownInterval;
+        }
+
+        function cancelAutoClose() {
+            if (window.autoCloseInterval) {
+                clearInterval(window.autoCloseInterval);
+                window.autoCloseInterval = null;
+            }
+            
+            const countdownEl = document.querySelector('.auto-close-countdown');
+            if (countdownEl) {
+                countdownEl.remove();
+            }
+        }
+
+        function updateRecordingVisualization(isActive) {
+            let visualizerEl = document.getElementById('recording-visualizer');
+            if (!visualizerEl && isActive) {
+                // Create visualizer
+                visualizerEl = document.createElement('div');
+                visualizerEl.id = 'recording-visualizer';
+                visualizerEl.className = 'recording-visualizer';
+                
+                // Create bars
+                for (let i = 0; i < 5; i++) {
+                    const bar = document.createElement('div');
+                    bar.className = 'recording-bar';
+                    bar.style.animationDelay = `${i * 0.1}s`;
+                    visualizerEl.appendChild(bar);
+                }
+                
+                // Insert after record button
+                const recordBtn = document.getElementById('record-btn');
+                recordBtn.parentNode.insertBefore(visualizerEl, recordBtn.nextSibling);
+            }
+            
+            if (visualizerEl) {
+                const bars = visualizerEl.querySelectorAll('.recording-bar');
+                bars.forEach(bar => {
+                    if (isActive) {
+                        bar.classList.add('active');
+                    } else {
+                        bar.classList.remove('active');
+                    }
+                });
+                
+                if (!isActive) {
+                    setTimeout(() => {
+                        if (visualizerEl.parentNode) {
+                            visualizerEl.parentNode.removeChild(visualizerEl);
+                        }
+                    }, 500);
+                }
+            }
         }
 
         function updateStatus(message, type) {
@@ -501,14 +751,45 @@
             
             transcriptText.textContent = transcript;
             transcriptEl.classList.remove('hidden');
+            
+            // Add typing animation effect
+            transcriptText.style.overflow = 'hidden';
+            transcriptText.style.whiteSpace = 'nowrap';
+            transcriptText.style.animation = 'typing 1s steps(40, end)';
+            
+            setTimeout(() => {
+                transcriptText.style.animation = '';
+                transcriptText.style.whiteSpace = 'normal';
+            }, 1000);
         }
 
         function showProcessedData(data) {
             const processedEl = document.getElementById('processed-data');
             const processedContent = document.getElementById('processed-data-content');
             
-            processedContent.textContent = JSON.stringify(data.structured_data, null, 2);
+            // Format the structured data more beautifully
+            let formattedData;
+            if (data.structured_data) {
+                formattedData = Object.entries(data.structured_data)
+                    .map(([key, value]) => {
+                        const label = key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+                        return `${label}: ${value}`;
+                    })
+                    .join('\n');
+            } else {
+                formattedData = JSON.stringify(data, null, 2);
+            }
+            
+            processedContent.innerHTML = `
+                <div class="processed-data-header">
+                    <strong>📊 Final Structured Data</strong>
+                </div>
+                <div class="processed-data-content">${formattedData}</div>
+            `;
+            
             processedEl.classList.remove('hidden');
+            processedEl.style.background = 'linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%)';
+            processedEl.style.borderColor = 'var(--success-color)';
         }
 
         async function toggleRecording() {

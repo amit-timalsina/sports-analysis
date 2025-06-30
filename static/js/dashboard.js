@@ -8,6 +8,10 @@ class MobileDashboard {
         this.currentUser = 'demo_user'; // TODO: Get from authentication
         this.todayEntries = new Map(); // Track today's logged activities
         this.isLoading = false;
+        this.allEntries = null; // Store all entries for filtering/searching
+        this.currentFilter = 'all'; // Current activity type filter
+        this.currentSearchTerm = ''; // Current search term
+        this.filtersSetup = false; // Track if filters have been set up
         
         this.init();
     }
@@ -339,9 +343,518 @@ class MobileDashboard {
     }
 
     async loadEntriesData() {
-        // Implementation for entries loading
         console.log('📋 Loading entries data...');
-        // This will be enhanced with better entry display
+        
+        try {
+            const container = document.getElementById('entries-container');
+            if (!container) return;
+
+            // Show loading state
+            container.innerHTML = `
+                <div class="entries-loading">
+                    <div class="loading"></div>
+                    <p>Loading your activities...</p>
+                </div>
+            `;
+
+            // Load all entry types in parallel with individual error handling
+            const results = await Promise.allSettled([
+                this.fetchEntries('fitness', 10),
+                this.fetchEntries('cricket_coaching', 10),
+                this.fetchEntries('cricket_match', 10),
+                this.fetchEntries('rest_day', 10)
+            ]);
+
+            // Extract successful results
+            const [fitnessResult, coachingResult, matchResult, restResult] = results;
+            
+            const fitnessEntries = fitnessResult.status === 'fulfilled' ? fitnessResult.value : [];
+            const coachingEntries = coachingResult.status === 'fulfilled' ? coachingResult.value : [];
+            const matchEntries = matchResult.status === 'fulfilled' ? matchResult.value : [];
+            const restEntries = restResult.status === 'fulfilled' ? restResult.value : [];
+
+            // Combine and sort all entries
+            const allEntries = [
+                ...fitnessEntries.map(entry => ({ ...entry, type: 'fitness' })),
+                ...coachingEntries.map(entry => ({ ...entry, type: 'cricket_coaching' })),
+                ...matchEntries.map(entry => ({ ...entry, type: 'cricket_match' })),
+                ...restEntries.map(entry => ({ ...entry, type: 'rest_day' }))
+            ];
+
+            console.log(`✅ Loaded ${allEntries.length} total entries`);
+
+            // Sort by creation date (newest first)
+            allEntries.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+            // Store entries for filtering
+            this.allEntries = allEntries;
+            this.currentFilter = 'all';
+            this.currentSearchTerm = '';
+
+            // Display entries
+            this.displayEntries(allEntries);
+
+            // Setup filter event listeners (only once)
+            if (!this.filtersSetup) {
+                this.setupEntryFilters();
+                this.filtersSetup = true;
+            }
+
+        } catch (error) {
+            console.error('❌ Failed to load entries:', error);
+            this.showEntriesError(error.message);
+        }
+    }
+
+    async fetchEntries(type, limit = 10) {
+        try {
+            const endpoints = {
+                'fitness': '/api/entries/fitness',
+                'cricket_coaching': '/api/entries/cricket/coaching',
+                'cricket_match': '/api/entries/cricket/matches',
+                'rest_day': '/api/entries/rest-days'
+            };
+
+            const response = await fetch(`${endpoints[type]}?limit=${limit}`);
+            if (!response.ok) {
+                throw new Error(`Failed to load ${type} entries: ${response.status} ${response.statusText}`);
+            }
+
+            const data = await response.json();
+            return data.data?.entries || [];
+        } catch (error) {
+            console.error(`❌ Error fetching ${type} entries:`, error);
+            return [];
+        }
+    }
+
+    displayEntries(entries) {
+        const container = document.getElementById('entries-container');
+        if (!container) return;
+
+        if (entries.length === 0) {
+            container.innerHTML = `
+                <div class="empty-entries">
+                    <div class="empty-icon">📭</div>
+                    <h3>No entries found</h3>
+                    <p>Start logging your activities to see them here!</p>
+                </div>
+            `;
+            return;
+        }
+
+        const entriesHTML = entries.map(entry => this.createEntryCard(entry)).join('');
+        
+        container.innerHTML = `
+            <div class="entries-grid">
+                ${entriesHTML}
+            </div>
+        `;
+
+        // Update statistics (only when showing all entries)
+        if (!this.currentSearchTerm && this.currentFilter === 'all') {
+            this.updateEntryStatistics();
+        }
+
+        // Animate entry cards
+        this.animateEntryCards();
+    }
+
+    updateEntryStatistics() {
+        if (!this.allEntries) return;
+
+        const stats = {
+            total: this.allEntries.length,
+            fitness: this.allEntries.filter(e => e.type === 'fitness').length,
+            cricket_coaching: this.allEntries.filter(e => e.type === 'cricket_coaching').length,
+            cricket_match: this.allEntries.filter(e => e.type === 'cricket_match').length,
+            rest_day: this.allEntries.filter(e => e.type === 'rest_day').length
+        };
+
+        // Update stat displays
+        const totalEl = document.getElementById('total-entries');
+        const fitnessEl = document.getElementById('fitness-count');
+        const cricketEl = document.getElementById('cricket-count');
+        const matchEl = document.getElementById('match-count');
+        const restEl = document.getElementById('rest-count');
+
+        if (totalEl) totalEl.textContent = stats.total;
+        if (fitnessEl) fitnessEl.textContent = stats.fitness;
+        if (cricketEl) cricketEl.textContent = stats.cricket_coaching;
+        if (matchEl) matchEl.textContent = stats.cricket_match;
+        if (restEl) restEl.textContent = stats.rest_day;
+
+        // Show stats container
+        const statsContainer = document.getElementById('entry-stats');
+        if (statsContainer && stats.total > 0) {
+            statsContainer.classList.remove('hidden');
+        }
+
+        // Add click handlers to stat cards for filtering
+        this.setupStatCardFilters();
+    }
+
+    setupStatCardFilters() {
+        const statCards = document.querySelectorAll('.stat-card');
+        
+        statCards.forEach((card, index) => {
+            card.style.cursor = 'pointer';
+            card.onclick = () => {
+                const filters = ['all', 'fitness', 'cricket_coaching', 'cricket_match', 'rest_day'];
+                const targetFilter = filters[index];
+                
+                // Update filter button active state
+                document.querySelectorAll('.filter-btn').forEach(btn => {
+                    btn.classList.remove('active');
+                    if (btn.dataset.filter === targetFilter) {
+                        btn.classList.add('active');
+                    }
+                });
+                
+                // Apply filter
+                this.filterEntries(targetFilter);
+            };
+        });
+    }
+
+    createEntryCard(entry) {
+        const icons = {
+            'fitness': '🏃',
+            'cricket_coaching': '🏏',
+            'cricket_match': '🏆',
+            'rest_day': '😴'
+        };
+
+        const titles = {
+            'fitness': this.formatFitnessTitle(entry),
+            'cricket_coaching': this.formatCoachingTitle(entry),
+            'cricket_match': this.formatMatchTitle(entry),
+            'rest_day': this.formatRestDayTitle(entry)
+        };
+
+        const mainInfo = this.getMainInfo(entry);
+        const description = this.getEntryDescription(entry);
+        const tags = this.getEntryTags(entry);
+
+        return `
+            <div class="entry-card ${entry.type}" data-entry-id="${entry.id}" data-type="${entry.type}">
+                <div class="entry-header">
+                    <h3 class="entry-title">
+                        <span class="entry-icon">${icons[entry.type]}</span>
+                        ${titles[entry.type]}
+                    </h3>
+                    <div class="entry-date">${this.formatDate(entry.created_at)}</div>
+                </div>
+                
+                <div class="entry-content">
+                    <div class="entry-main-info">
+                        ${mainInfo.map(info => `
+                            <div class="entry-info-item">
+                                <div class="entry-info-label">${info.label}</div>
+                                <div class="entry-info-value">${info.value}</div>
+                            </div>
+                        `).join('')}
+                    </div>
+                    
+                    ${description ? `<div class="entry-description">"${description}"</div>` : ''}
+                    
+                    <div class="entry-tags">
+                        ${tags.map(tag => `<span class="entry-tag ${tag.class}">${tag.text}</span>`).join('')}
+                    </div>
+                </div>
+                
+                <div class="entry-footer">
+                    <span class="entry-id">ID: ${entry.id}</span>
+                    <div class="entry-confidence">
+                        <span>${Math.round((entry.confidence_score || 0) * 100)}%</span>
+                        <div class="confidence-bar">
+                            <div class="confidence-fill" style="width: ${(entry.confidence_score || 0) * 100}%"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    formatFitnessTitle(entry) {
+        const type = (entry.fitness_type || 'fitness').replace(/_/g, ' ');
+        return `${type.charAt(0).toUpperCase() + type.slice(1)} Session`;
+    }
+
+    formatCoachingTitle(entry) {
+        const type = (entry.session_type || 'cricket').replace(/_/g, ' ');
+        return `${type.charAt(0).toUpperCase() + type.slice(1)} Practice`;
+    }
+
+    formatMatchTitle(entry) {
+        const type = (entry.match_type || 'match').charAt(0).toUpperCase() + (entry.match_type || 'match').slice(1);
+        return `${type} Performance`;
+    }
+
+    formatRestDayTitle(entry) {
+        const type = (entry.rest_type || 'rest').replace(/_/g, ' ');
+        return `${type.charAt(0).toUpperCase() + type.slice(1)} Day`;
+    }
+
+    getMainInfo(entry) {
+        switch (entry.type) {
+            case 'fitness':
+                return [
+                    { label: 'Duration', value: `${entry.duration_minutes || 0}min` },
+                    { label: 'Intensity', value: entry.intensity || 'N/A' },
+                    { label: 'Energy', value: `${entry.energy_level || 0}/5` },
+                    { label: 'Distance', value: entry.distance_km ? `${entry.distance_km}km` : 'N/A' }
+                ];
+            
+            case 'cricket_coaching':
+                return [
+                    { label: 'Duration', value: `${entry.duration_minutes || 0}min` },
+                    { label: 'Confidence', value: `${entry.confidence_level || 0}/10` },
+                    { label: 'Focus', value: `${entry.focus_level || 0}/10` },
+                    { label: 'Self Rating', value: `${entry.self_assessment_score || 0}/10` }
+                ];
+            
+            case 'cricket_match':
+                return [
+                    { label: 'Runs', value: entry.runs_scored !== null ? entry.runs_scored : 'N/A' },
+                    { label: 'Balls', value: entry.balls_faced !== null ? entry.balls_faced : 'N/A' },
+                    { label: 'Opposition', value: `${entry.opposition_strength || 0}/10` },
+                    { label: 'Satisfaction', value: `${entry.post_match_satisfaction || 0}/10` }
+                ];
+            
+            case 'rest_day':
+                return [
+                    { label: 'Energy', value: `${entry.energy_level || 0}/10` },
+                    { label: 'Fatigue', value: `${entry.fatigue_level || 0}/10` },
+                    { label: 'Motivation', value: `${entry.motivation_level || 0}/10` },
+                    { label: 'Soreness', value: entry.soreness_level ? `${entry.soreness_level}/10` : 'N/A' }
+                ];
+            
+            default:
+                return [];
+        }
+    }
+
+    getEntryDescription(entry) {
+        switch (entry.type) {
+            case 'fitness':
+                return entry.details || entry.transcript?.substring(0, 100) || '';
+            case 'cricket_coaching':
+                return entry.what_went_well || entry.transcript?.substring(0, 100) || '';
+            case 'cricket_match':
+                return entry.key_shots_played || entry.transcript?.substring(0, 100) || '';
+            case 'rest_day':
+                return entry.mood_description || entry.physical_state || entry.transcript?.substring(0, 100) || '';
+            default:
+                return '';
+        }
+    }
+
+    getEntryTags(entry) {
+        const tags = [];
+        
+        // Mental state tag
+        if (entry.mental_state) {
+            tags.push({ text: entry.mental_state, class: 'mental-state' });
+        }
+        
+        // Type-specific tags
+        switch (entry.type) {
+            case 'fitness':
+                if (entry.duration_minutes) {
+                    tags.push({ text: `${entry.duration_minutes}min`, class: 'duration' });
+                }
+                if (entry.intensity) {
+                    tags.push({ text: entry.intensity, class: 'intensity' });
+                }
+                break;
+                
+            case 'cricket_coaching':
+                if (entry.session_type) {
+                    tags.push({ text: entry.session_type.replace(/_/g, ' '), class: 'session-type' });
+                }
+                break;
+                
+            case 'cricket_match':
+                if (entry.match_type) {
+                    tags.push({ text: entry.match_type, class: 'match-type' });
+                }
+                break;
+                
+            case 'rest_day':
+                if (entry.rest_type) {
+                    tags.push({ text: entry.rest_type.replace(/_/g, ' '), class: 'rest-type' });
+                }
+                break;
+        }
+        
+        return tags;
+    }
+
+    setupEntryFilters() {
+        const filterButtons = document.querySelectorAll('.filter-btn');
+        
+        filterButtons.forEach(button => {
+            button.addEventListener('click', () => {
+                // Remove active class from all buttons
+                filterButtons.forEach(btn => btn.classList.remove('active'));
+                
+                // Add active class to clicked button
+                button.classList.add('active');
+                
+                // Filter entries
+                const filter = button.dataset.filter;
+                this.filterEntries(filter);
+            });
+        });
+        
+        // Setup search functionality
+        const searchInput = document.getElementById('entry-search-input');
+        if (searchInput) {
+            searchInput.addEventListener('input', (e) => {
+                this.searchEntries(e.target.value);
+            });
+            
+            // Clear search when focus is lost and input is empty
+            searchInput.addEventListener('blur', (e) => {
+                if (e.target.value.trim() === '') {
+                    this.currentSearchTerm = '';
+                    this.applyFilters();
+                }
+            });
+        }
+    }
+
+    searchEntries(searchTerm) {
+        this.currentSearchTerm = searchTerm.toLowerCase().trim();
+        this.applyFilters();
+    }
+
+    filterEntries(filter) {
+        this.currentFilter = filter;
+        this.applyFilters();
+    }
+
+    applyFilters() {
+        if (!this.allEntries) return;
+        
+        let filteredEntries = this.allEntries;
+        
+        // Apply type filter
+        if (this.currentFilter !== 'all') {
+            filteredEntries = filteredEntries.filter(entry => entry.type === this.currentFilter);
+        }
+        
+        // Apply search filter
+        if (this.currentSearchTerm) {
+            filteredEntries = filteredEntries.filter(entry => {
+                const searchableText = [
+                    entry.transcript || '',
+                    entry.details || '',
+                    entry.what_went_well || '',
+                    entry.key_shots_played || '',
+                    entry.mood_description || '',
+                    entry.physical_state || '',
+                    entry.mental_state || '',
+                    entry.fitness_type || '',
+                    entry.session_type || '',
+                    entry.match_type || '',
+                    entry.rest_type || '',
+                    entry.skills_practiced || '',
+                    entry.notes || ''
+                ].join(' ').toLowerCase();
+                
+                return searchableText.includes(this.currentSearchTerm);
+            });
+        }
+        
+        this.displayEntries(filteredEntries);
+        
+        // Show search results count if searching
+        if (this.currentSearchTerm) {
+            this.showSearchResults(filteredEntries.length, this.allEntries.length);
+        }
+    }
+
+    showSearchResults(filteredCount, totalCount) {
+        const searchInput = document.getElementById('entry-search-input');
+        if (!searchInput) return;
+        
+        // Create or update search results indicator
+        let resultsIndicator = document.getElementById('search-results-indicator');
+        if (!resultsIndicator) {
+            resultsIndicator = document.createElement('div');
+            resultsIndicator.id = 'search-results-indicator';
+            resultsIndicator.style.cssText = `
+                font-size: 0.8rem;
+                color: var(--text-secondary);
+                margin-top: var(--spacing-xs);
+                text-align: center;
+                font-style: italic;
+            `;
+            searchInput.parentNode.appendChild(resultsIndicator);
+        }
+        
+        if (filteredCount === 0) {
+            resultsIndicator.textContent = `No results found for "${this.currentSearchTerm}"`;
+            resultsIndicator.style.color = 'var(--error-color)';
+        } else {
+            resultsIndicator.textContent = `Found ${filteredCount} of ${totalCount} entries`;
+            resultsIndicator.style.color = 'var(--success-color)';
+        }
+        
+        resultsIndicator.style.display = 'block';
+        
+        // Hide indicator after 3 seconds if no search term
+        if (!this.currentSearchTerm) {
+            setTimeout(() => {
+                if (resultsIndicator) {
+                    resultsIndicator.style.display = 'none';
+                }
+            }, 3000);
+        }
+    }
+
+    animateEntryCards() {
+        const cards = document.querySelectorAll('.entry-card');
+        cards.forEach((card, index) => {
+            card.style.animationDelay = `${index * 0.1}s`;
+        });
+    }
+
+    formatDate(dateString) {
+        const date = new Date(dateString);
+        const now = new Date();
+        const diffTime = Math.abs(now - date);
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        
+        if (diffDays === 1) {
+            return 'Today';
+        } else if (diffDays === 2) {
+            return 'Yesterday';
+        } else if (diffDays <= 7) {
+            return `${diffDays - 1} days ago`;
+        } else {
+            return date.toLocaleDateString('en-US', { 
+                month: 'short', 
+                day: 'numeric',
+                year: date.getFullYear() !== now.getFullYear() ? 'numeric' : undefined
+            });
+        }
+    }
+
+    showEntriesError(message) {
+        const container = document.getElementById('entries-container');
+        if (!container) return;
+        
+        container.innerHTML = `
+            <div class="empty-entries">
+                <div class="empty-icon">❌</div>
+                <h3>Error Loading Entries</h3>
+                <p>${message}</p>
+                <button class="btn" onclick="window.mobileDashboard.loadEntriesData()">🔄 Try Again</button>
+            </div>
+        `;
     }
 
     setupPullToRefresh() {
