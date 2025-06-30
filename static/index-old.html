@@ -1,0 +1,795 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🏏 Cricket Fitness Tracker - Enhanced</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            color: #333;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+            color: white;
+        }
+        
+        .header h1 {
+            font-size: 2.5em;
+            font-weight: 700;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+        
+        .card {
+            background: white;
+            border-radius: 16px;
+            padding: 24px;
+            margin-bottom: 24px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+            border: 1px solid rgba(255,255,255,0.2);
+        }
+        
+        .card h2 {
+            color: #4f46e5;
+            margin-bottom: 16px;
+            font-size: 1.4em;
+            display: flex;
+            align-items: center;
+        }
+        
+        .tabs {
+            display: flex;
+            background: #f1f5f9;
+            border-radius: 12px;
+            padding: 4px;
+            margin-bottom: 20px;
+        }
+        
+        .tab {
+            flex: 1;
+            padding: 12px 16px;
+            background: transparent;
+            border: none;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .tab.active {
+            background: white;
+            color: #4f46e5;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        
+        .tab-content {
+            display: none;
+        }
+        
+        .tab-content.active {
+            display: block;
+        }
+        
+        .entry-buttons {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+        
+        .entry-btn {
+            background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+            color: white;
+            border: none;
+            border-radius: 12px;
+            padding: 20px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-align: center;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .entry-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(99, 102, 241, 0.4);
+        }
+        
+        .entry-btn .emoji {
+            font-size: 24px;
+        }
+        
+        .voice-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.8);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .voice-modal.active {
+            display: flex;
+        }
+        
+        .voice-content {
+            background: white;
+            border-radius: 16px;
+            padding: 32px;
+            max-width: 500px;
+            width: 90%;
+            text-align: center;
+        }
+        
+        .record-btn {
+            background: #dc2626;
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 100px;
+            height: 100px;
+            font-size: 32px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin: 20px;
+            border: 4px solid #fca5a5;
+        }
+        
+        .record-btn:hover {
+            background: #b91c1c;
+            transform: scale(1.05);
+        }
+        
+        .record-btn.recording {
+            background: #ef4444;
+            animation: pulse 1.5s infinite;
+        }
+        
+        @keyframes pulse {
+            0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
+            70% { box-shadow: 0 0 0 20px rgba(239, 68, 68, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+        }
+        
+        .status {
+            margin: 16px 0;
+            padding: 12px;
+            border-radius: 8px;
+            font-weight: 500;
+        }
+        
+        .status.info {
+            background: #dbeafe;
+            color: #1e40af;
+            border: 1px solid #93c5fd;
+        }
+        
+        .status.success {
+            background: #dcfce7;
+            color: #16a34a;
+            border: 1px solid #86efac;
+        }
+        
+        .status.error {
+            background: #fee2e2;
+            color: #dc2626;
+            border: 1px solid #fca5a5;
+        }
+        
+        .api-section {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+        }
+        
+        .api-btn {
+            background: #10b981;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            padding: 12px 20px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-align: left;
+            width: 100%;
+        }
+        
+        .api-btn:hover {
+            background: #059669;
+            transform: translateY(-1px);
+        }
+        
+        .api-btn:disabled {
+            background: #6b7280;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .response-area {
+            background: #1f2937;
+            color: #e5e7eb;
+            padding: 16px;
+            border-radius: 8px;
+            margin-top: 12px;
+            font-family: 'Monaco', 'Menlo', monospace;
+            font-size: 12px;
+            line-height: 1.5;
+            max-height: 400px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+        }
+        
+        .close-btn {
+            background: #6b7280;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            padding: 8px 16px;
+            cursor: pointer;
+            margin-top: 16px;
+        }
+        
+        .close-btn:hover {
+            background: #4b5563;
+        }
+        
+        .hidden {
+            display: none;
+        }
+        
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #3498db;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-right: 8px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🏏 Cricket Fitness Tracker</h1>
+            <p>Enhanced Voice-powered tracking with comprehensive analytics</p>
+        </div>
+
+        <div class="card">
+            <div class="tabs">
+                <button class="tab active" onclick="showTab('voice')">🎤 Voice Logging</button>
+                <button class="tab" onclick="showTab('analytics')">📊 Analytics</button>
+                <button class="tab" onclick="showTab('entries')">📋 View Entries</button>
+                <button class="tab" onclick="showTab('dashboard')">🏠 Dashboard</button>
+            </div>
+
+            <!-- Voice Logging Tab -->
+            <div id="voice-tab" class="tab-content active">
+                <h2><span>🎤</span> Voice Entry Logging</h2>
+                <p style="margin-bottom: 20px; color: #6b7280;">Choose the type of activity you want to log, then record your voice message. The system will automatically extract and structure your data.</p>
+                
+                <div class="entry-buttons">
+                    <button class="entry-btn" onclick="startVoiceEntry('fitness')">
+                        <span class="emoji">🏃</span>
+                        <span>Fitness Activity</span>
+                        <small>Running, gym, training</small>
+                    </button>
+                    <button class="entry-btn" onclick="startVoiceEntry('cricket_coaching')">
+                        <span class="emoji">🏏</span>
+                        <span>Cricket Coaching</span>
+                        <small>Practice sessions, drills</small>
+                    </button>
+                    <button class="entry-btn" onclick="startVoiceEntry('cricket_match')">
+                        <span class="emoji">🏆</span>
+                        <span>Cricket Match</span>
+                        <small>Match performance</small>
+                    </button>
+                    <button class="entry-btn" onclick="startVoiceEntry('rest_day')">
+                        <span class="emoji">😴</span>
+                        <span>Rest Day</span>
+                        <small>Recovery, reflection</small>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Analytics Tab -->
+            <div id="analytics-tab" class="tab-content">
+                <h2><span>📊</span> Analytics & Insights</h2>
+                <p style="margin-bottom: 20px; color: #6b7280;">Get comprehensive analytics and insights about your fitness and cricket performance.</p>
+                
+                <div class="api-section">
+                    <div>
+                        <h3 style="margin-bottom: 12px; color: #4f46e5;">Fitness Analytics</h3>
+                        <button class="api-btn" onclick="loadFitnessAnalytics()">📈 Load Fitness Analytics</button>
+                        <div id="fitness-analytics-response" class="response-area hidden"></div>
+                    </div>
+                    <div>
+                        <h3 style="margin-bottom: 12px; color: #4f46e5;">Cricket Analytics</h3>
+                        <button class="api-btn" onclick="loadCricketAnalytics()">🏏 Load Cricket Analytics</button>
+                        <div id="cricket-analytics-response" class="response-area hidden"></div>
+                    </div>
+                </div>
+                <div style="margin-top: 20px;">
+                    <h3 style="margin-bottom: 12px; color: #4f46e5;">Combined Analytics</h3>
+                    <button class="api-btn" onclick="loadCombinedAnalytics()">🔄 Load Combined Analytics</button>
+                    <div id="combined-analytics-response" class="response-area hidden"></div>
+                </div>
+            </div>
+
+            <!-- View Entries Tab -->
+            <div id="entries-tab" class="tab-content">
+                <h2><span>📋</span> View Your Entries</h2>
+                <p style="margin-bottom: 20px; color: #6b7280;">Browse through your logged entries by category.</p>
+                
+                <div class="api-section">
+                    <div>
+                        <h3 style="margin-bottom: 12px; color: #4f46e5;">Fitness Entries</h3>
+                        <button class="api-btn" onclick="loadFitnessEntries()">🏃 Load Fitness Entries</button>
+                        <div id="fitness-entries-response" class="response-area hidden"></div>
+                    </div>
+                    <div>
+                        <h3 style="margin-bottom: 12px; color: #4f46e5;">Cricket Coaching</h3>
+                        <button class="api-btn" onclick="loadCricketCoaching()">🏏 Load Coaching Sessions</button>
+                        <div id="cricket-coaching-response" class="response-area hidden"></div>
+                    </div>
+                </div>
+                <div class="api-section" style="margin-top: 20px;">
+                    <div>
+                        <h3 style="margin-bottom: 12px; color: #4f46e5;">Cricket Matches</h3>
+                        <button class="api-btn" onclick="loadCricketMatches()">🏆 Load Match Performances</button>
+                        <div id="cricket-matches-response" class="response-area hidden"></div>
+                    </div>
+                    <div>
+                        <h3 style="margin-bottom: 12px; color: #4f46e5;">Rest Days</h3>
+                        <button class="api-btn" onclick="loadRestDays()">😴 Load Rest Days</button>
+                        <div id="rest-days-response" class="response-area hidden"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Dashboard Tab -->
+            <div id="dashboard-tab" class="tab-content">
+                <h2><span>🏠</span> Personal Dashboard</h2>
+                <p style="margin-bottom: 20px; color: #6b7280;">Get a comprehensive overview of your recent activities and quick insights.</p>
+                
+                <button class="api-btn" onclick="loadDashboard()" style="margin-bottom: 20px;">🔄 Refresh Dashboard</button>
+                <div id="dashboard-response" class="response-area hidden"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Voice Recording Modal -->
+    <div id="voice-modal" class="voice-modal">
+        <div class="voice-content">
+            <h3 id="voice-title">Recording Entry</h3>
+            <p id="voice-description" style="color: #6b7280; margin-bottom: 20px;">Speak naturally about your activity</p>
+            
+            <button id="record-btn" class="record-btn" onclick="toggleRecording()">🎤</button>
+            
+            <div id="status-message" class="status info">Click the microphone to start recording</div>
+            
+            <div id="transcript-display" class="hidden" style="background: #f3f4f6; padding: 16px; border-radius: 8px; margin: 16px 0; text-align: left;">
+                <strong>Transcript:</strong>
+                <p id="transcript-text" style="margin-top: 8px; font-style: italic;"></p>
+            </div>
+            
+            <div id="processed-data" class="hidden" style="background: #f0f9ff; padding: 16px; border-radius: 8px; margin: 16px 0; text-align: left; border: 1px solid #0ea5e9;">
+                <strong>Processed Data:</strong>
+                <pre id="processed-data-content" style="margin-top: 8px; font-size: 12px; white-space: pre-wrap;"></pre>
+            </div>
+            
+            <button class="close-btn" onclick="closeVoiceModal()">Close</button>
+        </div>
+    </div>
+
+    <script>
+        // WebSocket and recording state
+        let socket = null;
+        let currentSessionId = null;
+        let mediaRecorder = null;
+        let audioStream = null;
+        let isRecording = false;
+        let currentEntryType = null;
+
+        // Tab management
+        function showTab(tabName) {
+            document.querySelectorAll('.tab-content').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            document.querySelectorAll('.tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            
+            document.getElementById(tabName + '-tab').classList.add('active');
+            event.target.classList.add('active');
+        }
+
+        // Voice recording functionality
+        function startVoiceEntry(entryType) {
+            currentEntryType = entryType;
+            
+            // Update modal content
+            const titles = {
+                'fitness': '🏃 Fitness Activity',
+                'cricket_coaching': '🏏 Cricket Coaching', 
+                'cricket_match': '🏆 Cricket Match',
+                'rest_day': '😴 Rest Day'
+            };
+            
+            const descriptions = {
+                'fitness': 'Tell me about your fitness activity - type, duration, intensity, and how you felt.',
+                'cricket_coaching': 'Describe your coaching session - what you practiced, what went well, and areas to improve.',
+                'cricket_match': 'Share your match performance - runs scored, wicket keeping, and how you felt.',
+                'rest_day': 'Tell me about your rest day - how you recovered and how you\'re feeling.'
+            };
+            
+            document.getElementById('voice-title').textContent = titles[entryType];
+            document.getElementById('voice-description').textContent = descriptions[entryType];
+            document.getElementById('voice-modal').classList.add('active');
+            
+            // Reset modal state
+            document.getElementById('transcript-display').classList.add('hidden');
+            document.getElementById('processed-data').classList.add('hidden');
+            document.getElementById('record-btn').classList.remove('recording');
+            document.getElementById('record-btn').textContent = '🎤';
+            
+            // Create new session and connect
+            createSessionAndConnect();
+        }
+
+        async function createSessionAndConnect() {
+            try {
+                updateStatus('Creating session...', 'info');
+                
+                const response = await fetch('/api/sessions', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    currentSessionId = data.data.session_id;
+                    connectWebSocket();
+                } else {
+                    updateStatus('Failed to create session', 'error');
+                }
+            } catch (error) {
+                updateStatus('Connection error: ' + error.message, 'error');
+            }
+        }
+
+        function connectWebSocket() {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = `${protocol}//${window.location.host}/ws/voice/${currentSessionId}`;
+            
+            socket = new WebSocket(wsUrl);
+            
+            socket.onopen = function() {
+                updateStatus('Connected! Click microphone to record', 'success');
+            };
+            
+            socket.onmessage = function(event) {
+                const data = JSON.parse(event.data);
+                handleWebSocketMessage(data);
+            };
+            
+            socket.onclose = function() {
+                updateStatus('Connection closed', 'info');
+            };
+            
+            socket.onerror = function() {
+                updateStatus('Connection error', 'error');
+            };
+        }
+
+        function handleWebSocketMessage(data) {
+            console.log('WebSocket message:', data);
+            
+            switch(data.type) {
+                case 'connection_established':
+                    updateStatus('Connected! Recording will accumulate chunks until completion.', 'success');
+                    break;
+                    
+                case 'voice_meta_received':
+                    updateStatus('Ready to record audio...', 'info');
+                    break;
+                    
+                case 'audio_chunk_received':
+                    updateStatus(`Recording... (${data.data.total_accumulated} bytes accumulated)`, 'info');
+                    break;
+                    
+                case 'audio_processing_started':
+                    updateStatus(`Processing ${data.data.total_audio_size} bytes of audio...`, 'info');
+                    break;
+                    
+                case 'transcript_ready':
+                    showTranscript(data.data.transcript);
+                    updateStatus('Transcript ready. Processing data...', 'info');
+                    break;
+                    
+                case 'voice_processed_complete':
+                    showProcessedData(data.data);
+                    updateStatus(`✅ Entry saved! ID: ${data.data.saved_entry_id}`, 'success');
+                    break;
+                    
+                case 'error':
+                    updateStatus(`❌ Error: ${data.message}`, 'error');
+                    break;
+            }
+        }
+
+        async function toggleRecording() {
+            if (!isRecording) {
+                await startRecording();
+            } else {
+                stopRecording();
+            }
+        }
+
+        async function startRecording() {
+            try {
+                // First send metadata
+                if (socket && socket.readyState === WebSocket.OPEN) {
+                    socket.send(JSON.stringify({
+                        type: 'voice_data_meta',
+                        entry_type: currentEntryType,
+                        user_id: 'demo_user'
+                    }));
+                }
+
+                // Get microphone access
+                audioStream = await navigator.mediaDevices.getUserMedia({ 
+                    audio: {
+                        sampleRate: 16000,
+                        channelCount: 1,
+                        echoCancellation: true,
+                        noiseSuppression: true
+                    } 
+                });
+                
+                mediaRecorder = new MediaRecorder(audioStream, {
+                    mimeType: 'audio/webm;codecs=opus'
+                });
+                
+                mediaRecorder.ondataavailable = function(event) {
+                    if (event.data.size > 0 && socket.readyState === WebSocket.OPEN) {
+                        socket.send(event.data);
+                    }
+                };
+                
+                mediaRecorder.onstop = function() {
+                    // Send recording complete signal when MediaRecorder stops
+                    if (socket && socket.readyState === WebSocket.OPEN) {
+                        socket.send(JSON.stringify({
+                            type: 'recording_complete'
+                        }));
+                    }
+                };
+                
+                mediaRecorder.start(1000);
+                isRecording = true;
+                
+                document.getElementById('record-btn').classList.add('recording');
+                document.getElementById('record-btn').textContent = '⏹️';
+                updateStatus('Recording... Audio chunks will be accumulated until you stop.', 'info');
+                
+            } catch (error) {
+                updateStatus('Microphone access denied: ' + error.message, 'error');
+            }
+        }
+
+        function stopRecording() {
+            if (mediaRecorder && isRecording) {
+                mediaRecorder.stop();
+                audioStream.getTracks().forEach(track => track.stop());
+                isRecording = false;
+                
+                document.getElementById('record-btn').classList.remove('recording');
+                document.getElementById('record-btn').textContent = '🎤';
+                updateStatus('Recording stopped. Processing accumulated audio...', 'info');
+            }
+        }
+
+        function showTranscript(transcript) {
+            document.getElementById('transcript-display').classList.remove('hidden');
+            document.getElementById('transcript-text').textContent = transcript;
+        }
+
+        function showProcessedData(data) {
+            document.getElementById('processed-data').classList.remove('hidden');
+            document.getElementById('processed-data-content').textContent = JSON.stringify(data.structured_data, null, 2);
+        }
+
+        function updateStatus(message, type) {
+            const statusEl = document.getElementById('status-message');
+            statusEl.textContent = message;
+            statusEl.className = `status ${type}`;
+        }
+
+        function closeVoiceModal() {
+            if (socket) socket.close();
+            if (mediaRecorder && isRecording) stopRecording();
+            
+            document.getElementById('voice-modal').classList.remove('active');
+            
+            // Reset state
+            socket = null;
+            currentSessionId = null;
+            mediaRecorder = null;
+            audioStream = null;
+            isRecording = false;
+            currentEntryType = null;
+        }
+
+        // API Functions with loading states
+        async function apiRequest(endpoint) {
+            try {
+                const response = await fetch(endpoint);
+                const data = await response.json();
+                return JSON.stringify(data, null, 2);
+            } catch (error) {
+                return `Error: ${error.message}`;
+            }
+        }
+
+        async function loadFitnessAnalytics() {
+            const btn = event.target;
+            const responseEl = document.getElementById('fitness-analytics-response');
+            
+            btn.innerHTML = '<span class="loading"></span> Loading...';
+            btn.disabled = true;
+            
+            responseEl.classList.remove('hidden');
+            responseEl.textContent = await apiRequest('/api/analytics/fitness');
+            
+            btn.innerHTML = '📈 Load Fitness Analytics';
+            btn.disabled = false;
+        }
+
+        async function loadCricketAnalytics() {
+            const btn = event.target;
+            const responseEl = document.getElementById('cricket-analytics-response');
+            
+            btn.innerHTML = '<span class="loading"></span> Loading...';
+            btn.disabled = true;
+            
+            responseEl.classList.remove('hidden');
+            responseEl.textContent = await apiRequest('/api/analytics/cricket');
+            
+            btn.innerHTML = '🏏 Load Cricket Analytics';
+            btn.disabled = false;
+        }
+
+        async function loadCombinedAnalytics() {
+            const btn = event.target;
+            const responseEl = document.getElementById('combined-analytics-response');
+            
+            btn.innerHTML = '<span class="loading"></span> Loading...';
+            btn.disabled = true;
+            
+            responseEl.classList.remove('hidden');
+            responseEl.textContent = await apiRequest('/api/analytics/combined');
+            
+            btn.innerHTML = '🔄 Load Combined Analytics';
+            btn.disabled = false;
+        }
+
+        async function loadFitnessEntries() {
+            const btn = event.target;
+            const responseEl = document.getElementById('fitness-entries-response');
+            
+            btn.innerHTML = '<span class="loading"></span> Loading...';
+            btn.disabled = true;
+            
+            responseEl.classList.remove('hidden');
+            responseEl.textContent = await apiRequest('/api/entries/fitness');
+            
+            btn.innerHTML = '🏃 Load Fitness Entries';
+            btn.disabled = false;
+        }
+
+        async function loadCricketCoaching() {
+            const btn = event.target;
+            const responseEl = document.getElementById('cricket-coaching-response');
+            
+            btn.innerHTML = '<span class="loading"></span> Loading...';
+            btn.disabled = true;
+            
+            responseEl.classList.remove('hidden');
+            responseEl.textContent = await apiRequest('/api/entries/cricket/coaching');
+            
+            btn.innerHTML = '🏏 Load Coaching Sessions';
+            btn.disabled = false;
+        }
+
+        async function loadCricketMatches() {
+            const btn = event.target;
+            const responseEl = document.getElementById('cricket-matches-response');
+            
+            btn.innerHTML = '<span class="loading"></span> Loading...';
+            btn.disabled = true;
+            
+            responseEl.classList.remove('hidden');
+            responseEl.textContent = await apiRequest('/api/entries/cricket/matches');
+            
+            btn.innerHTML = '🏆 Load Match Performances';
+            btn.disabled = false;
+        }
+
+        async function loadRestDays() {
+            const btn = event.target;
+            const responseEl = document.getElementById('rest-days-response');
+            
+            btn.innerHTML = '<span class="loading"></span> Loading...';
+            btn.disabled = true;
+            
+            responseEl.classList.remove('hidden');
+            responseEl.textContent = await apiRequest('/api/entries/rest-days');
+            
+            btn.innerHTML = '😴 Load Rest Days';
+            btn.disabled = false;
+        }
+
+        async function loadDashboard() {
+            const btn = event.target;
+            const responseEl = document.getElementById('dashboard-response');
+            
+            btn.innerHTML = '<span class="loading"></span> Loading...';
+            btn.disabled = true;
+            
+            responseEl.classList.remove('hidden');
+            responseEl.textContent = await apiRequest('/api/dashboard');
+            
+            btn.innerHTML = '🔄 Refresh Dashboard';
+            btn.disabled = false;
+        }
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('Cricket Fitness Tracker Enhanced loaded');
+            console.log('Entry type selection: Client-side');
+            console.log('Supported audio types:', MediaRecorder.isTypeSupported('audio/webm;codecs=opus'));
+            console.log('Available endpoints:', [
+                '/api/analytics/fitness',
+                '/api/analytics/cricket', 
+                '/api/analytics/combined',
+                '/api/entries/fitness',
+                '/api/entries/cricket/coaching',
+                '/api/entries/cricket/matches', 
+                '/api/entries/rest-days',
+                '/api/dashboard'
+            ]);
+        });
+    </script>
+</body>
+</html> 

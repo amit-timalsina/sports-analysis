@@ -13,8 +13,11 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <meta name="apple-mobile-web-app-title" content="Cricket Tracker">
     
-    <!-- Mobile-First Styles -->
+    <!-- Stylesheets -->
     <link rel="stylesheet" href="/static/css/mobile-first.css">
+    
+    <!-- Preload critical resources -->
+    <link rel="preload" href="/static/js/dashboard.js" as="script">
 </head>
 <body>
     <div class="container">
@@ -72,19 +75,19 @@
                 <div id="quick-stats" class="quick-stats">
                     <!-- Stats will be populated by JavaScript -->
                     <div class="stat-item">
-                        <span class="stat-value">-</span>
+                        <span class="stat-value">0/7</span>
                         <div class="stat-label">Fitness sessions</div>
                     </div>
                     <div class="stat-item">
-                        <span class="stat-value">-</span>
+                        <span class="stat-value">0</span>
                         <div class="stat-label">Cricket sessions</div>
                     </div>
                     <div class="stat-item">
-                        <span class="stat-value">-</span>
+                        <span class="stat-value">0/5</span>
                         <div class="stat-label">Energy level</div>
                     </div>
                     <div class="stat-item">
-                        <span class="stat-value">-</span>
+                        <span class="stat-value">0%</span>
                         <div class="stat-label">Weekly goal</div>
                     </div>
                 </div>
@@ -98,20 +101,20 @@
                     <div class="progress-item">
                         <div class="progress-text">
                             <span>Fitness Sessions</span>
-                            <span id="fitness-progress-text">-/7 days</span>
+                            <span>0/7 days</span>
                         </div>
                         <div class="progress-bar">
-                            <div id="fitness-progress-fill" class="progress-fill" style="width: 0%"></div>
+                            <div class="progress-fill" style="width: 0%"></div>
                         </div>
                     </div>
 
                     <div class="progress-item">
                         <div class="progress-text">
                             <span>Cricket Practice</span>
-                            <span id="cricket-progress-text">-/5 sessions</span>
+                            <span>0/5 sessions</span>
                         </div>
                         <div class="progress-bar">
-                            <div id="cricket-progress-fill" class="progress-fill" style="width: 0%"></div>
+                            <div class="progress-fill" style="width: 0%"></div>
                         </div>
                     </div>
                 </div>
@@ -122,7 +125,7 @@
                 <div id="recent-activity">
                     <h3>📋 Recent Activity</h3>
                     <div class="empty-state">
-                        <p>Loading recent activities...</p>
+                        <p>No recent activities. Start logging your fitness and cricket sessions!</p>
                     </div>
                 </div>
             </section>
@@ -138,26 +141,21 @@
             <section class="card">
                 <h2>📊 Performance Analytics</h2>
                 <p style="color: var(--text-secondary); margin-bottom: var(--spacing-lg);">
-                    Get insights into your cricket and fitness progress
+                    Visual insights into your cricket and fitness progress
                 </p>
                 
-                <div class="api-section">
-                    <div>
-                        <h3 style="margin-bottom: 12px; color: var(--primary-color);">Fitness Analytics</h3>
-                        <button class="btn" onclick="loadFitnessAnalytics()">📈 Load Fitness Analytics</button>
-                        <div id="fitness-analytics-response" class="response-area hidden"></div>
-                    </div>
-                    <div style="margin-top: var(--spacing-lg);">
-                        <h3 style="margin-bottom: 12px; color: var(--primary-color);">Cricket Analytics</h3>
-                        <button class="btn" onclick="loadCricketAnalytics()">🏏 Load Cricket Analytics</button>
-                        <div id="cricket-analytics-response" class="response-area hidden"></div>
-                    </div>
+                <!-- Chart containers will be added here -->
+                <div class="chart-container">
+                    <canvas id="fitness-chart" width="400" height="200"></canvas>
                 </div>
-                <div style="margin-top: var(--spacing-lg);">
-                    <h3 style="margin-bottom: 12px; color: var(--primary-color);">Combined Analytics</h3>
-                    <button class="btn" onclick="loadCombinedAnalytics()">🔄 Load Combined Analytics</button>
-                    <div id="combined-analytics-response" class="response-area hidden"></div>
+                
+                <div class="chart-container">
+                    <canvas id="cricket-chart" width="400" height="200"></canvas>
                 </div>
+                
+                <p style="text-align: center; color: var(--text-secondary); font-style: italic;">
+                    📈 Charts will be implemented in Phase 1 of development
+                </p>
             </section>
         </div>
 
@@ -169,17 +167,11 @@
                     Browse through your logged activities
                 </p>
                 
-                <div class="api-section">
-                    <div>
-                        <h3 style="margin-bottom: 12px; color: var(--primary-color);">Fitness Entries</h3>
-                        <button class="btn" onclick="loadFitnessEntries()">🏃 Load Fitness Entries</button>
-                        <div id="fitness-entries-response" class="response-area hidden"></div>
-                    </div>
-                    <div style="margin-top: var(--spacing-lg);">
-                        <h3 style="margin-bottom: 12px; color: var(--primary-color);">Cricket Sessions</h3>
-                        <button class="btn" onclick="loadCricketCoaching()">🏏 Load Coaching Sessions</button>
-                        <div id="cricket-coaching-response" class="response-area hidden"></div>
-                    </div>
+                <div id="entries-list">
+                    <!-- Entries will be populated by JavaScript -->
+                    <p style="text-align: center; color: var(--text-secondary); font-style: italic;">
+                        📝 Enhanced entry display will be implemented in Phase 1
+                    </p>
                 </div>
             </section>
         </div>
@@ -197,7 +189,7 @@
                         <div style="font-size: 3rem; margin-bottom: var(--spacing-md);">🤖</div>
                         <p>AI Chat Interface</p>
                         <p style="font-size: 0.9rem; margin-top: var(--spacing-sm);">
-                            Coming soon! Your cricket coach powered by AI.
+                            Coming in Phase 2 of development
                         </p>
                     </div>
                 </div>
@@ -366,7 +358,7 @@
                         if (window.mobileDashboard) {
                             window.mobileDashboard.loadDashboardData();
                         }
-                    }, 1500);
+                    }, 1000);
                     break;
                     
                 case 'error':
@@ -473,124 +465,10 @@
             }
         }
 
-        // Analytics functions
-        async function apiRequest(endpoint) {
-            try {
-                const response = await fetch(endpoint);
-                const data = await response.json();
-                return JSON.stringify(data, null, 2);
-            } catch (error) {
-                return `Error: ${error.message}`;
-            }
-        }
-
-        async function loadFitnessAnalytics() {
-            const btn = event.target;
-            const responseEl = document.getElementById('fitness-analytics-response');
-            
-            btn.innerHTML = '<span class="loading"></span> Loading...';
-            btn.disabled = true;
-            
-            responseEl.classList.remove('hidden');
-            responseEl.textContent = await apiRequest('/api/analytics/fitness');
-            
-            btn.innerHTML = '📈 Load Fitness Analytics';
-            btn.disabled = false;
-        }
-
-        async function loadCricketAnalytics() {
-            const btn = event.target;
-            const responseEl = document.getElementById('cricket-analytics-response');
-            
-            btn.innerHTML = '<span class="loading"></span> Loading...';
-            btn.disabled = true;
-            
-            responseEl.classList.remove('hidden');
-            responseEl.textContent = await apiRequest('/api/analytics/cricket');
-            
-            btn.innerHTML = '🏏 Load Cricket Analytics';
-            btn.disabled = false;
-        }
-
-        async function loadCombinedAnalytics() {
-            const btn = event.target;
-            const responseEl = document.getElementById('combined-analytics-response');
-            
-            btn.innerHTML = '<span class="loading"></span> Loading...';
-            btn.disabled = true;
-            
-            responseEl.classList.remove('hidden');
-            responseEl.textContent = await apiRequest('/api/analytics/combined');
-            
-            btn.innerHTML = '🔄 Load Combined Analytics';
-            btn.disabled = false;
-        }
-
-        async function loadFitnessEntries() {
-            const btn = event.target;
-            const responseEl = document.getElementById('fitness-entries-response');
-            
-            btn.innerHTML = '<span class="loading"></span> Loading...';
-            btn.disabled = true;
-            
-            responseEl.classList.remove('hidden');
-            responseEl.textContent = await apiRequest('/api/entries/fitness');
-            
-            btn.innerHTML = '🏃 Load Fitness Entries';
-            btn.disabled = false;
-        }
-
-        async function loadCricketCoaching() {
-            const btn = event.target;
-            const responseEl = document.getElementById('cricket-coaching-response');
-            
-            btn.innerHTML = '<span class="loading"></span> Loading...';
-            btn.disabled = true;
-            
-            responseEl.classList.remove('hidden');
-            responseEl.textContent = await apiRequest('/api/entries/cricket/coaching');
-            
-            btn.innerHTML = '🏏 Load Coaching Sessions';
-            btn.disabled = false;
-        }
-
-        // Tab switching function
-        function showTab(tabName) {
-            // Remove active class from all tabs
-            document.querySelectorAll('.nav-tab').forEach(tab => {
-                tab.classList.remove('active');
-            });
-            
-            // Hide all tab content
-            document.querySelectorAll('.tab-content').forEach(content => {
-                content.classList.add('hidden');
-            });
-            
-            // Show selected tab and content
-            const activeTab = document.querySelector(`[data-tab="${tabName}"]`);
-            const activeContent = document.getElementById(`${tabName}-tab`);
-            
-            if (activeTab && activeContent) {
-                activeTab.classList.add('active');
-                activeContent.classList.remove('hidden');
-            }
-        }
-
         // Set up record button click handler
         document.addEventListener('DOMContentLoaded', function() {
             const recordBtn = document.getElementById('record-btn');
             recordBtn.addEventListener('click', toggleRecording);
-
-            // Tab navigation
-            document.querySelectorAll('.nav-tab').forEach(tab => {
-                tab.addEventListener('click', function() {
-                    const tabName = this.dataset.tab;
-                    showTab(tabName);
-                });
-            });
-
-            console.log('🏏 Cricket Fitness Tracker Enhanced loaded');
-            console.log('Mobile-first interface with working voice recording');
         });
     </script>
 </body>

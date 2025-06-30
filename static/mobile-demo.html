@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>🏏 Cricket Fitness Tracker - Mobile Demo</title>
+    <link rel="stylesheet" href="/static/css/mobile-first.css">
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <h1>🏏 Cricket Fitness Tracker</h1>
+            <p>Voice-powered tracking for young athletes</p>
+        </header>
+
+        <nav class="nav-tabs">
+            <button class="nav-tab active" data-tab="dashboard">🏠 Dashboard</button>
+            <button class="nav-tab" data-tab="analytics">📊 Analytics</button>
+            <button class="nav-tab" data-tab="entries">📋 Entries</button>
+            <button class="nav-tab" data-tab="chat">🤖 AI Coach</button>
+        </nav>
+
+        <div id="dashboard-tab" class="tab-content">
+            <section class="card">
+                <h2>📝 Log Today's Activities</h2>
+                <p style="color: var(--text-secondary); margin-bottom: var(--spacing-lg);">
+                    Tap an activity to start voice logging
+                </p>
+                
+                <div id="activity-grid" class="activity-grid">
+                    <div class="activity-card" data-activity="fitness">
+                        <div class="icon">🏃</div>
+                        <div class="title">Fitness</div>
+                        <div class="status">Tap to log</div>
+                    </div>
+                    <div class="activity-card completed" data-activity="cricket_coaching">
+                        <div class="icon">🏏</div>
+                        <div class="title">Cricket</div>
+                        <div class="status">✅ Logged</div>
+                    </div>
+                    <div class="activity-card" data-activity="cricket_match">
+                        <div class="icon">🏆</div>
+                        <div class="title">Match</div>
+                        <div class="status">Tap to log</div>
+                    </div>
+                    <div class="activity-card" data-activity="rest_day">
+                        <div class="icon">😴</div>
+                        <div class="title">Rest Day</div>
+                        <div class="status">Tap to log</div>
+                    </div>
+                </div>
+            </section>
+
+            <section class="card">
+                <h2>📊 Quick Stats</h2>
+                <div class="quick-stats">
+                    <div class="stat-item">
+                        <span class="stat-value">4/7</span>
+                        <div class="stat-label">Fitness sessions</div>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-value">3</span>
+                        <div class="stat-label">Cricket sessions</div>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-value">4.2/5</span>
+                        <div class="stat-label">Energy level</div>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-value">86%</span>
+                        <div class="stat-label">Weekly goal</div>
+                    </div>
+                </div>
+            </section>
+
+            <section class="card">
+                <div class="progress-section">
+                    <h3>📈 This Week's Progress</h3>
+                    
+                    <div class="progress-item">
+                        <div class="progress-text">
+                            <span>Fitness Sessions</span>
+                            <span>4/7 days</span>
+                        </div>
+                        <div class="progress-bar">
+                            <div class="progress-fill" style="width: 57%"></div>
+                        </div>
+                    </div>
+
+                    <div class="progress-item">
+                        <div class="progress-text">
+                            <span>Cricket Practice</span>
+                            <span>3/5 sessions</span>
+                        </div>
+                        <div class="progress-bar">
+                            <div class="progress-fill" style="width: 60%"></div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <button class="btn full-width">🔄 Refresh Dashboard</button>
+        </div>
+    </div>
+
+    <script>
+        document.querySelectorAll('.activity-card').forEach(card => {
+            card.addEventListener('click', function() {
+                const activity = this.dataset.activity;
+                alert(`Starting voice logging for: ${activity}`);
+            });
+        });
+
+        document.querySelectorAll('.nav-tab').forEach(tab => {
+            tab.addEventListener('click', function() {
+                document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+                this.classList.add('active');
+            });
+        });
+    </script>
+</body>
+</html> 
