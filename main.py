@@ -694,6 +694,24 @@ async def handle_complete_audio_processing(session_id: str) -> None:
             saved_entry = None
             processing_duration = (datetime.now(UTC) - start_time).total_seconds()
 
+            # Get all transcripts from the conversation context
+            conversation_context = conversation_service.get_conversation(session_id)
+            all_transcripts = ""
+            if conversation_context and hasattr(conversation_context, "transcript_history"):
+                # Combine all transcripts with turn numbers
+                transcript_parts = []
+                for turn_data in conversation_context.transcript_history:
+                    turn_num = turn_data.get("turn", "N/A")
+                    transcript = turn_data.get("transcript", "")
+                    confidence = turn_data.get("confidence", 0.0)
+                    transcript_parts.append(
+                        f"Turn {turn_num} (conf: {confidence:.2f}): {transcript}"
+                    )
+                all_transcripts = "\n\n".join(transcript_parts)
+            else:
+                # Fallback to final transcript if history not available
+                all_transcripts = transcription_result.text
+
             # Get database session for saving
             async with sessionmanager.get_session() as db_session:
                 from fitness_tracking.repositories.cricket_repository import (
@@ -709,7 +727,7 @@ async def handle_complete_audio_processing(session_id: str) -> None:
                         session_id=session_id,
                         user_id=user_id,
                         voice_data=structured_data,
-                        transcript=transcription_result.text,
+                        transcript=all_transcripts,
                         confidence_score=transcription_result.confidence,
                         processing_duration=processing_duration,
                     )
@@ -720,7 +738,7 @@ async def handle_complete_audio_processing(session_id: str) -> None:
                         session_id=session_id,
                         user_id=user_id,
                         voice_data=structured_data,
-                        transcript=transcription_result.text,
+                        transcript=all_transcripts,
                         confidence_score=transcription_result.confidence,
                         processing_duration=processing_duration,
                     )
@@ -731,7 +749,7 @@ async def handle_complete_audio_processing(session_id: str) -> None:
                         session_id=session_id,
                         user_id=user_id,
                         voice_data=structured_data,
-                        transcript=transcription_result.text,
+                        transcript=all_transcripts,
                         confidence_score=transcription_result.confidence,
                         processing_duration=processing_duration,
                     )
@@ -742,7 +760,7 @@ async def handle_complete_audio_processing(session_id: str) -> None:
                         session_id=session_id,
                         user_id=user_id,
                         voice_data=structured_data,
-                        transcript=transcription_result.text,
+                        transcript=all_transcripts,
                         confidence_score=transcription_result.confidence,
                         processing_duration=processing_duration,
                     )

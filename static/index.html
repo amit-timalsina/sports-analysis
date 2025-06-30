@@ -264,30 +264,68 @@
     <!-- Voice Recording Modal -->
     <div id="voice-modal" class="voice-modal hidden">
         <div class="voice-content">
-            <h3 id="voice-title">🎤 Voice Recording</h3>
-            <p id="voice-description" style="color: var(--text-secondary); margin-bottom: var(--spacing-lg);">
-                Speak naturally about your activity
-            </p>
-            
-            <button id="record-btn" class="record-btn">🎤</button>
-            
-            <div id="status-message" class="status info">
-                Click the microphone to start recording
+            <div class="voice-header">
+                <h3 id="voice-title">🎤 Voice Recording</h3>
+                <button class="close-btn" onclick="closeVoiceModal()">×</button>
             </div>
             
-            <div id="transcript-display" class="hidden" style="background: var(--background-light); padding: var(--spacing-md); border-radius: var(--border-radius-sm); margin: var(--spacing-md) 0; text-align: left;">
-                <strong>Transcript:</strong>
-                <p id="transcript-text" style="margin-top: var(--spacing-sm); font-style: italic;"></p>
+            <div class="voice-instructions">
+                <p id="voice-description" style="color: var(--text-secondary); margin-bottom: var(--spacing-lg);">
+                    Speak naturally about your activity
+                </p>
+                <div class="instruction-tips">
+                    <div class="tip-item">💡 <span>Be specific about duration, intensity, and how you felt</span></div>
+                    <div class="tip-item">🎯 <span>Mention key details like distance, skills practiced, or performance</span></div>
+                </div>
             </div>
             
-            <div id="processed-data" class="hidden" style="background: #f0f9ff; padding: var(--spacing-md); border-radius: var(--border-radius-sm); margin: var(--spacing-md) 0; text-align: left; border: 1px solid #0ea5e9;">
-                <strong>Processed Data:</strong>
-                <pre id="processed-data-content" style="margin-top: var(--spacing-sm); font-size: 0.8rem; white-space: pre-wrap;"></pre>
+            <div class="recording-section">
+                <div class="record-button-container">
+                    <button id="record-btn" class="record-btn enhanced">
+                        <span class="btn-icon">🎤</span>
+                        <span class="btn-text">Start Recording</span>
+                    </button>
+                    <div class="record-instruction">Tap to start recording</div>
+                </div>
+                
+                <div id="recording-visualizer" class="recording-visualizer hidden">
+                    <div class="visualizer-bars">
+                        <div class="recording-bar"></div>
+                        <div class="recording-bar"></div>
+                        <div class="recording-bar"></div>
+                        <div class="recording-bar"></div>
+                        <div class="recording-bar"></div>
+                    </div>
+                    <div class="recording-text">Recording in progress...</div>
+                </div>
             </div>
             
-            <div style="display: flex; gap: var(--spacing-md); margin-top: var(--spacing-lg);">
-                <button class="btn secondary" onclick="closeVoiceModal()">Cancel</button>
-                <button class="btn" onclick="closeVoiceModal()">Done</button>
+            <div id="status-message" class="status info enhanced">
+                <span class="status-icon">ℹ️</span>
+                <span class="status-text">Click the microphone to start recording</span>
+            </div>
+            
+            <div id="transcript-display" class="hidden transcript-container">
+                <div class="transcript-header">
+                    <strong>📝 What you said:</strong>
+                </div>
+                <p id="transcript-text" class="transcript-text"></p>
+            </div>
+            
+            <div id="processed-data" class="hidden processed-data-container">
+                <div class="processed-header">
+                    <strong>📊 Processed Data:</strong>
+                </div>
+                <pre id="processed-data-content" class="processed-content"></pre>
+            </div>
+            
+            <div class="voice-actions">
+                <button class="btn secondary" onclick="closeVoiceModal()">
+                    <span>Cancel</span>
+                </button>
+                <button class="btn primary" onclick="closeVoiceModal()" id="done-btn" style="display: none;">
+                    <span>✅ Done</span>
+                </button>
             </div>
         </div>
     </div>
@@ -699,26 +737,7 @@
         }
 
         function updateRecordingVisualization(isActive) {
-            let visualizerEl = document.getElementById('recording-visualizer');
-            if (!visualizerEl && isActive) {
-                // Create visualizer
-                visualizerEl = document.createElement('div');
-                visualizerEl.id = 'recording-visualizer';
-                visualizerEl.className = 'recording-visualizer';
-                
-                // Create bars
-                for (let i = 0; i < 5; i++) {
-                    const bar = document.createElement('div');
-                    bar.className = 'recording-bar';
-                    bar.style.animationDelay = `${i * 0.1}s`;
-                    visualizerEl.appendChild(bar);
-                }
-                
-                // Insert after record button
-                const recordBtn = document.getElementById('record-btn');
-                recordBtn.parentNode.insertBefore(visualizerEl, recordBtn.nextSibling);
-            }
-            
+            const visualizerEl = document.getElementById('recording-visualizer');
             if (visualizerEl) {
                 const bars = visualizerEl.querySelectorAll('.recording-bar');
                 bars.forEach(bar => {
@@ -729,11 +748,11 @@
                     }
                 });
                 
-                if (!isActive) {
+                if (isActive) {
+                    visualizerEl.classList.remove('hidden');
+                } else {
                     setTimeout(() => {
-                        if (visualizerEl.parentNode) {
-                            visualizerEl.parentNode.removeChild(visualizerEl);
-                        }
+                        visualizerEl.classList.add('hidden');
                     }, 500);
                 }
             }
@@ -741,8 +760,20 @@
 
         function updateStatus(message, type) {
             const statusEl = document.getElementById('status-message');
-            statusEl.textContent = message;
-            statusEl.className = `status ${type}`;
+            const statusIcon = statusEl.querySelector('.status-icon');
+            const statusText = statusEl.querySelector('.status-text');
+            
+            // Update icon based on type
+            const icons = {
+                'info': 'ℹ️',
+                'success': '✅',
+                'error': '❌',
+                'warning': '⚠️'
+            };
+            
+            if (statusIcon) statusIcon.textContent = icons[type] || 'ℹ️';
+            if (statusText) statusText.textContent = message;
+            statusEl.className = `status ${type} enhanced`;
         }
 
         function showTranscript(transcript) {
@@ -753,19 +784,20 @@
             transcriptEl.classList.remove('hidden');
             
             // Add typing animation effect
-            transcriptText.style.overflow = 'hidden';
-            transcriptText.style.whiteSpace = 'nowrap';
-            transcriptText.style.animation = 'typing 1s steps(40, end)';
+            transcriptText.style.opacity = '0';
+            transcriptText.style.transform = 'translateY(10px)';
             
             setTimeout(() => {
-                transcriptText.style.animation = '';
-                transcriptText.style.whiteSpace = 'normal';
-            }, 1000);
+                transcriptText.style.transition = 'all 0.5s ease';
+                transcriptText.style.opacity = '1';
+                transcriptText.style.transform = 'translateY(0)';
+            }, 100);
         }
 
         function showProcessedData(data) {
             const processedEl = document.getElementById('processed-data');
             const processedContent = document.getElementById('processed-data-content');
+            const doneBtn = document.getElementById('done-btn');
             
             // Format the structured data more beautifully
             let formattedData;
@@ -780,16 +812,23 @@
                 formattedData = JSON.stringify(data, null, 2);
             }
             
-            processedContent.innerHTML = `
-                <div class="processed-data-header">
-                    <strong>📊 Final Structured Data</strong>
-                </div>
-                <div class="processed-data-content">${formattedData}</div>
-            `;
-            
+            processedContent.textContent = formattedData;
             processedEl.classList.remove('hidden');
-            processedEl.style.background = 'linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%)';
-            processedEl.style.borderColor = 'var(--success-color)';
+            
+            // Show done button
+            if (doneBtn) {
+                doneBtn.style.display = 'block';
+            }
+            
+            // Add success animation
+            processedEl.style.opacity = '0';
+            processedEl.style.transform = 'translateY(20px)';
+            
+            setTimeout(() => {
+                processedEl.style.transition = 'all 0.5s ease';
+                processedEl.style.opacity = '1';
+                processedEl.style.transform = 'translateY(0)';
+            }, 100);
         }
 
         async function toggleRecording() {
@@ -802,6 +841,18 @@
 
         async function startRecording() {
             try {
+                // Update button appearance
+                const recordBtn = document.getElementById('record-btn');
+                const btnIcon = recordBtn.querySelector('.btn-icon');
+                const btnText = recordBtn.querySelector('.btn-text');
+                
+                recordBtn.classList.add('recording');
+                if (btnIcon) btnIcon.textContent = '⏹️';
+                if (btnText) btnText.textContent = 'Stop Recording';
+                
+                // Show recording visualizer
+                updateRecordingVisualization(true);
+                
                 // Send metadata first
                 if (socket && socket.readyState === WebSocket.OPEN) {
                     socket.send(JSON.stringify({
@@ -842,13 +893,20 @@
                 mediaRecorder.start(1000);
                 isRecording = true;
                 
-                document.getElementById('record-btn').classList.add('recording');
-                document.getElementById('record-btn').textContent = '⏹️';
-                updateStatus('Recording... speak naturally', 'info');
+                updateStatus('🎤 Recording... speak naturally about your activity', 'info');
                 
             } catch (error) {
                 console.error('Recording failed:', error);
-                updateStatus('❌ Recording failed: ' + error.message, 'error');
+                updateStatus('Recording failed: ' + error.message, 'error');
+                
+                // Reset button on error
+                const recordBtn = document.getElementById('record-btn');
+                const btnIcon = recordBtn.querySelector('.btn-icon');
+                const btnText = recordBtn.querySelector('.btn-text');
+                
+                recordBtn.classList.remove('recording');
+                if (btnIcon) btnIcon.textContent = '🎤';
+                if (btnText) btnText.textContent = 'Start Recording';
             }
         }
 
@@ -862,9 +920,19 @@
                     audioStream.getTracks().forEach(track => track.stop());
                 }
                 
-                document.getElementById('record-btn').classList.remove('recording');
-                document.getElementById('record-btn').textContent = '🎤';
-                updateStatus('Processing audio...', 'info');
+                // Update button appearance
+                const recordBtn = document.getElementById('record-btn');
+                const btnIcon = recordBtn.querySelector('.btn-icon');
+                const btnText = recordBtn.querySelector('.btn-text');
+                
+                recordBtn.classList.remove('recording');
+                if (btnIcon) btnIcon.textContent = '🎤';
+                if (btnText) btnText.textContent = 'Start Recording';
+                
+                // Hide recording visualizer
+                updateRecordingVisualization(false);
+                
+                updateStatus('🔄 Processing your audio...', 'info');
             }
         }
 

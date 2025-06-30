@@ -102,25 +102,29 @@ class MobileDashboard {
                 type: 'fitness',
                 icon: '🏃',
                 title: 'Fitness',
-                description: 'Log workout'
+                description: 'Log workout',
+                apiKey: 'fitness'
             },
             {
                 type: 'cricket_coaching',
                 icon: '🏏',
                 title: 'Cricket',
-                description: 'Practice session'
+                description: 'Practice session',
+                apiKey: 'cricket_coaching'
             },
             {
                 type: 'cricket_match',
                 icon: '🏆',
                 title: 'Match',
-                description: 'Game performance'
+                description: 'Game performance',
+                apiKey: 'cricket_matches'
             },
             {
                 type: 'rest_day',
                 icon: '😴',
                 title: 'Rest Day',
-                description: 'Recovery tracking'
+                description: 'Recovery tracking',
+                apiKey: 'rest_days'
             }
         ];
 
@@ -128,7 +132,7 @@ class MobileDashboard {
         const todayEntries = data.data?.recent_entries || {};
 
         activityGrid.innerHTML = activities.map(activity => {
-            const hasEntry = this.hasEntryToday(todayEntries[activity.type] || [], today);
+            const hasEntry = this.hasEntryToday(todayEntries[activity.apiKey] || [], today);
             const statusClass = hasEntry ? 'completed' : '';
             const statusText = hasEntry ? '✅ Logged' : 'Tap to log';
 
@@ -146,34 +150,52 @@ class MobileDashboard {
         const quickStats = document.getElementById('quick-stats');
         if (!quickStats) return;
 
-        const activitySummary = data.data?.activity_summary || {};
+        const summary = data.data?.activity_summary || {};
+        const insights = data.data?.quick_insights || {};
+        
+        // Calculate more meaningful stats
+        const totalActivities = (summary.fitness_sessions || 0) + 
+                               (summary.cricket_coaching_sessions || 0) + 
+                               (summary.matches_played || 0) + 
+                               (summary.rest_days || 0);
+        
+        const fitnessGoalProgress = Math.min(Math.round((summary.fitness_sessions || 0) / 4 * 100), 100); // 4 sessions per week target
+        const averageEnergy = summary.average_energy_level || 0;
+        const improvementTrend = insights.fitness_improvement_trends?.overall_trend || 0;
         
         const stats = [
             {
-                label: 'This Week',
-                value: `${activitySummary.fitness_sessions || 0}/7`,
-                description: 'Fitness sessions'
+                label: 'Activities',
+                value: totalActivities,
+                description: 'This period',
+                trend: totalActivities > 0 ? '+' : ''
             },
             {
-                label: 'Cricket',
-                value: activitySummary.cricket_coaching_sessions || 0,
-                description: 'Sessions'
+                label: 'Fitness',
+                value: `${fitnessGoalProgress}%`,
+                description: 'Weekly goal',
+                trend: fitnessGoalProgress >= 75 ? '🔥' : fitnessGoalProgress >= 50 ? '👍' : ''
             },
             {
                 label: 'Energy',
-                value: `${activitySummary.average_energy_level || 0}/5`,
-                description: 'Average level'
+                value: `${averageEnergy.toFixed(1)}/5`,
+                description: 'Average level',
+                trend: averageEnergy >= 4 ? '⚡' : averageEnergy >= 3 ? '👌' : ''
             },
             {
-                label: 'Frequency',
-                value: `${Math.round((activitySummary.weekly_frequency || 0) * 100)}%`,
-                description: 'Weekly goal'
+                label: 'Form',
+                value: improvementTrend >= 0 ? `+${improvementTrend.toFixed(1)}%` : `${improvementTrend.toFixed(1)}%`,
+                description: 'Improvement',
+                trend: improvementTrend > 0 ? '📈' : improvementTrend < -5 ? '📉' : '➡️'
             }
         ];
 
         quickStats.innerHTML = stats.map(stat => `
             <div class="stat-item">
-                <span class="stat-value">${stat.value}</span>
+                <div class="stat-value-container">
+                    <span class="stat-value">${stat.value}</span>
+                    ${stat.trend ? `<span class="stat-trend">${stat.trend}</span>` : ''}
+                </div>
                 <div class="stat-label">${stat.description}</div>
             </div>
         `).join('');
@@ -251,24 +273,413 @@ class MobileDashboard {
         const activityIcons = {
             fitness: '🏃',
             cricket_coaching: '🏏',
-            cricket_match: '🏆',
-            rest_day: '😴'
+            cricket_matches: '🏆',
+            rest_days: '😴'
         };
 
         recentActivity.innerHTML = `
             <h3>📋 Recent Activity</h3>
             <div class="recent-list">
-                ${recentItems.map(item => `
-                    <div class="recent-item">
-                        <div class="recent-icon">${activityIcons[item.type] || '📝'}</div>
-                        <div class="recent-content">
-                            <div class="recent-title">${this.formatActivityTitle(item)}</div>
-                            <div class="recent-time">${this.formatRelativeTime(item.timestamp)}</div>
-                        </div>
-                    </div>
-                `).join('')}
+                ${recentItems.map(item => this.createRecentActivityCard(item, activityIcons)).join('')}
             </div>
         `;
+    }
+
+    createRecentActivityCard(item, activityIcons) {
+        const icon = activityIcons[item.type] || '📝';
+        const title = this.formatActivityTitle(item);
+        const timeAgo = this.formatRelativeTime(item.timestamp);
+        
+        // Get key metrics based on activity type
+        const metrics = this.getActivityMetrics(item);
+        const highlight = this.getActivityHighlight(item);
+        
+        return `
+            <div class="recent-activity-card" onclick="window.mobileDashboard.showActivityDetails(${JSON.stringify(item).replace(/"/g, '&quot;')})">
+                <div class="recent-card-header">
+                    <div class="recent-icon-container">
+                        <span class="recent-icon">${icon}</span>
+                    </div>
+                    <div class="recent-main-info">
+                        <div class="recent-title">${title}</div>
+                        <div class="recent-time">${timeAgo}</div>
+                    </div>
+                    <div class="recent-confidence">
+                        ${Math.round((item.confidence_score || 0) * 100)}%
+                    </div>
+                </div>
+                
+                ${metrics.length > 0 ? `
+                    <div class="recent-metrics">
+                        ${metrics.map(metric => `
+                            <div class="recent-metric">
+                                <span class="metric-label">${metric.label}</span>
+                                <span class="metric-value">${metric.value}</span>
+                            </div>
+                        `).join('')}
+                    </div>
+                ` : ''}
+                
+                ${highlight ? `
+                    <div class="recent-highlight">
+                        <span class="highlight-icon">${highlight.icon}</span>
+                        <span class="highlight-text">${highlight.text}</span>
+                    </div>
+                ` : ''}
+                
+                <div class="click-indicator">
+                    <span>👆 Tap for details</span>
+                </div>
+            </div>
+        `;
+    }
+
+    showActivityDetails(item) {
+        // Create and show detailed modal
+        this.createActivityDetailsModal(item);
+    }
+
+    createActivityDetailsModal(item) {
+        // Remove existing modal if any
+        const existingModal = document.getElementById('activity-details-modal');
+        if (existingModal) {
+            existingModal.remove();
+        }
+
+        const modal = document.createElement('div');
+        modal.id = 'activity-details-modal';
+        modal.className = 'activity-details-modal';
+        
+        const activityIcons = {
+            fitness: '🏃',
+            cricket_coaching: '🏏',
+            cricket_matches: '🏆',
+            rest_days: '😴'
+        };
+
+        const icon = activityIcons[item.type] || '📝';
+        const title = this.formatActivityTitle(item);
+        const fullDetails = this.getFullActivityDetails(item);
+        const timeAgo = this.formatRelativeTime(item.timestamp);
+        const fullDate = new Date(item.created_at).toLocaleDateString('en-US', {
+            weekday: 'long',
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+        });
+
+        modal.innerHTML = `
+            <div class="activity-details-content">
+                <div class="details-header">
+                    <div class="details-title-section">
+                        <div class="details-icon">${icon}</div>
+                        <div class="details-title-info">
+                            <h3 class="details-title">${title}</h3>
+                            <div class="details-subtitle">${timeAgo} • ${fullDate}</div>
+                        </div>
+                    </div>
+                    <button class="details-close-btn" onclick="this.parentElement.parentElement.parentElement.remove()">×</button>
+                </div>
+
+                <div class="details-body">
+                    <div class="details-confidence">
+                        <div class="confidence-header">
+                            <span class="confidence-label">Confidence Score</span>
+                            <span class="confidence-percentage">${Math.round((item.confidence_score || 0) * 100)}%</span>
+                        </div>
+                        <div class="confidence-bar-container">
+                            <div class="confidence-bar-full">
+                                <div class="confidence-bar-fill" style="width: ${(item.confidence_score || 0) * 100}%"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    ${fullDetails.transcript ? `
+                        <div class="details-section">
+                            <h4 class="section-title">📝 What You Said</h4>
+                            <div class="transcript-content">"${fullDetails.transcript}"</div>
+                        </div>
+                    ` : ''}
+
+                    <div class="details-section">
+                        <h4 class="section-title">📊 Activity Details</h4>
+                        <div class="details-grid">
+                            ${fullDetails.details.map(detail => `
+                                <div class="detail-item">
+                                    <div class="detail-label">${detail.label}</div>
+                                    <div class="detail-value">${detail.value}</div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+
+                    ${fullDetails.notes ? `
+                        <div class="details-section">
+                            <h4 class="section-title">📝 Additional Notes</h4>
+                            <div class="notes-content">${fullDetails.notes}</div>
+                        </div>
+                    ` : ''}
+
+                    <div class="details-section">
+                        <h4 class="section-title">🔍 Technical Info</h4>
+                        <div class="technical-info">
+                            <div class="tech-item">
+                                <span class="tech-label">Entry ID:</span>
+                                <span class="tech-value">${item.id}</span>
+                            </div>
+                            <div class="tech-item">
+                                <span class="tech-label">Processing Time:</span>
+                                <span class="tech-value">${(item.processing_duration || 0).toFixed(2)}s</span>
+                            </div>
+                            <div class="tech-item">
+                                <span class="tech-label">Session ID:</span>
+                                <span class="tech-value">${item.session_id || 'N/A'}</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="details-actions">
+                    <button class="btn secondary" onclick="this.parentElement.parentElement.parentElement.remove()">
+                        Close
+                    </button>
+                </div>
+            </div>
+        `;
+
+        // Add modal to body
+        document.body.appendChild(modal);
+
+        // Add event listener to close on background click
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                modal.remove();
+            }
+        });
+
+        // Animate modal in
+        setTimeout(() => {
+            modal.classList.add('show');
+        }, 10);
+    }
+
+    getFullActivityDetails(item) {
+        const details = [];
+        let transcript = item.transcript || '';
+        let notes = item.notes || '';
+
+        switch (item.type) {
+            case 'fitness':
+                details.push(
+                    { label: 'Fitness Type', value: (item.fitness_type || 'General').replace(/_/g, ' ') },
+                    { label: 'Duration', value: `${item.duration_minutes || 0} minutes` },
+                    { label: 'Intensity', value: item.intensity || 'Not specified' },
+                    { label: 'Energy Level', value: `${item.energy_level || 0}/5` },
+                    { label: 'Mental State', value: item.mental_state || 'Not specified' }
+                );
+                if (item.distance_km) {
+                    details.push({ label: 'Distance', value: `${item.distance_km} km` });
+                }
+                if (item.location) {
+                    details.push({ label: 'Location', value: item.location });
+                }
+                break;
+
+            case 'cricket_coaching':
+                details.push(
+                    { label: 'Session Type', value: (item.session_type || 'General').replace(/_/g, ' ') },
+                    { label: 'Duration', value: `${item.duration_minutes || 0} minutes` },
+                    { label: 'Skills Practiced', value: item.skills_practiced || 'Not specified' },
+                    { label: 'Focus Level', value: `${item.focus_level || 0}/10` },
+                    { label: 'Confidence Level', value: `${item.confidence_level || 0}/10` },
+                    { label: 'Self Assessment', value: `${item.self_assessment_score || 0}/10` },
+                    { label: 'Difficulty Level', value: `${item.difficulty_level || 0}/10` },
+                    { label: 'Learning Satisfaction', value: `${item.learning_satisfaction || 0}/10` }
+                );
+                if (item.what_went_well) {
+                    notes += (notes ? '\n\n' : '') + `What went well: ${item.what_went_well}`;
+                }
+                if (item.areas_for_improvement) {
+                    notes += (notes ? '\n\n' : '') + `Areas for improvement: ${item.areas_for_improvement}`;
+                }
+                if (item.coach_feedback) {
+                    notes += (notes ? '\n\n' : '') + `Coach feedback: ${item.coach_feedback}`;
+                }
+                break;
+
+            case 'cricket_matches':
+                details.push(
+                    { label: 'Match Type', value: (item.match_type || 'General').replace(/_/g, ' ') },
+                    { label: 'Opposition Strength', value: `${item.opposition_strength || 0}/10` },
+                    { label: 'Pre-match Nerves', value: `${item.pre_match_nerves || 0}/10` },
+                    { label: 'Post-match Satisfaction', value: `${item.post_match_satisfaction || 0}/10` },
+                    { label: 'Mental State', value: item.mental_state || 'Not specified' }
+                );
+                
+                // Batting stats
+                if (item.runs_scored !== null || item.balls_faced !== null) {
+                    if (item.runs_scored !== null) details.push({ label: 'Runs Scored', value: item.runs_scored });
+                    if (item.balls_faced !== null) details.push({ label: 'Balls Faced', value: item.balls_faced });
+                    if (item.runs_scored && item.balls_faced) {
+                        const strikeRate = ((item.runs_scored / item.balls_faced) * 100).toFixed(1);
+                        details.push({ label: 'Strike Rate', value: `${strikeRate}%` });
+                    }
+                    if (item.boundaries_4s) details.push({ label: 'Boundaries (4s)', value: item.boundaries_4s });
+                    if (item.boundaries_6s) details.push({ label: 'Sixes', value: item.boundaries_6s });
+                    if (item.how_out) details.push({ label: 'How Out', value: item.how_out });
+                }
+                
+                // Fielding stats
+                if (item.catches_taken) details.push({ label: 'Catches Taken', value: item.catches_taken });
+                if (item.catches_dropped) details.push({ label: 'Catches Dropped', value: item.catches_dropped });
+                if (item.stumpings) details.push({ label: 'Stumpings', value: item.stumpings });
+                
+                if (item.key_shots_played) {
+                    notes += (notes ? '\n\n' : '') + `Key shots played: ${item.key_shots_played}`;
+                }
+                break;
+
+            case 'rest_days':
+                details.push(
+                    { label: 'Rest Type', value: (item.rest_type || 'General').replace(/_/g, ' ') },
+                    { label: 'Energy Level', value: `${item.energy_level || 0}/10` },
+                    { label: 'Fatigue Level', value: `${item.fatigue_level || 0}/10` },
+                    { label: 'Motivation Level', value: `${item.motivation_level || 0}/10` },
+                    { label: 'Mental State', value: item.mental_state || 'Not specified' }
+                );
+                if (item.soreness_level) {
+                    details.push({ label: 'Soreness Level', value: `${item.soreness_level}/10` });
+                }
+                if (item.mood_description) {
+                    notes += (notes ? '\n\n' : '') + `Mood: ${item.mood_description}`;
+                }
+                if (item.physical_state) {
+                    notes += (notes ? '\n\n' : '') + `Physical state: ${item.physical_state}`;
+                }
+                if (item.recovery_activities) {
+                    notes += (notes ? '\n\n' : '') + `Recovery activities: ${item.recovery_activities}`;
+                }
+                if (item.training_reflections) {
+                    notes += (notes ? '\n\n' : '') + `Training reflections: ${item.training_reflections}`;
+                }
+                if (item.goals_concerns) {
+                    notes += (notes ? '\n\n' : '') + `Goals/concerns: ${item.goals_concerns}`;
+                }
+                break;
+        }
+
+        return {
+            details: details.filter(d => d.value !== null && d.value !== undefined && d.value !== 'Not specified'),
+            transcript,
+            notes
+        };
+    }
+
+    getActivityMetrics(item) {
+        switch (item.type) {
+            case 'fitness':
+                const metrics = [];
+                if (item.duration_minutes) {
+                    metrics.push({ label: 'Duration', value: `${item.duration_minutes} min` });
+                }
+                if (item.intensity) {
+                    metrics.push({ label: 'Intensity', value: item.intensity.charAt(0).toUpperCase() + item.intensity.slice(1) });
+                }
+                if (item.energy_level) {
+                    metrics.push({ label: 'Energy Level', value: `${item.energy_level}/5` });
+                }
+                if (item.distance_km) {
+                    metrics.push({ label: 'Distance', value: `${item.distance_km} km` });
+                }
+                return metrics;
+            
+            case 'cricket_coaching':
+                const coachingMetrics = [];
+                if (item.duration_minutes) {
+                    coachingMetrics.push({ label: 'Session Length', value: `${item.duration_minutes} min` });
+                }
+                if (item.focus_level) {
+                    coachingMetrics.push({ label: 'Focus Level', value: `${item.focus_level}/10` });
+                }
+                if (item.confidence_level) {
+                    coachingMetrics.push({ label: 'Confidence', value: `${item.confidence_level}/10` });
+                }
+                if (item.self_assessment_score) {
+                    coachingMetrics.push({ label: 'Self Rating', value: `${item.self_assessment_score}/10` });
+                }
+                return coachingMetrics;
+            
+            case 'cricket_matches':
+                const matchMetrics = [];
+                if (item.runs_scored !== null && item.runs_scored !== undefined) {
+                    matchMetrics.push({ label: 'Runs Scored', value: `${item.runs_scored}` });
+                }
+                if (item.balls_faced !== null && item.balls_faced !== undefined) {
+                    matchMetrics.push({ label: 'Balls Faced', value: `${item.balls_faced}` });
+                }
+                if (item.runs_scored && item.balls_faced) {
+                    const strikeRate = Math.round((item.runs_scored / item.balls_faced) * 100);
+                    matchMetrics.push({ label: 'Strike Rate', value: `${strikeRate}%` });
+                }
+                if (item.opposition_strength) {
+                    matchMetrics.push({ label: 'Opposition', value: `${item.opposition_strength}/10` });
+                }
+                return matchMetrics;
+            
+            case 'rest_days':
+                const restMetrics = [];
+                if (item.energy_level) {
+                    restMetrics.push({ label: 'Energy Level', value: `${item.energy_level}/10` });
+                }
+                if (item.fatigue_level) {
+                    restMetrics.push({ label: 'Fatigue Level', value: `${item.fatigue_level}/10` });
+                }
+                if (item.motivation_level) {
+                    restMetrics.push({ label: 'Motivation', value: `${item.motivation_level}/10` });
+                }
+                if (item.rest_type) {
+                    const restTypeFormatted = item.rest_type.replace(/_/g, ' ').split(' ').map(word => 
+                        word.charAt(0).toUpperCase() + word.slice(1)
+                    ).join(' ');
+                    restMetrics.push({ label: 'Rest Type', value: restTypeFormatted });
+                }
+                return restMetrics;
+            
+            default:
+                return [];
+        }
+    }
+
+    getActivityHighlight(item) {
+        switch (item.type) {
+            case 'fitness':
+                if (item.duration_minutes >= 60) return { icon: '🔥', text: 'Long session!' };
+                if (item.intensity === 'high') return { icon: '💪', text: 'High intensity!' };
+                if (item.energy_level >= 4) return { icon: '⚡', text: 'High energy!' };
+                break;
+            
+            case 'cricket_coaching':
+                if (item.duration_minutes >= 90) return { icon: '🎯', text: 'Extended practice!' };
+                if (item.focus_level >= 8) return { icon: '🧠', text: 'Great focus!' };
+                if (item.self_assessment_score >= 8) return { icon: '⭐', text: 'Excellent session!' };
+                break;
+            
+            case 'cricket_matches':
+                const strikeRate = item.runs_scored && item.balls_faced ? 
+                    (item.runs_scored / item.balls_faced) * 100 : 0;
+                if (strikeRate >= 150) return { icon: '🚀', text: 'Explosive batting!' };
+                if (item.runs_scored >= 50) return { icon: '🏏', text: 'Half century!' };
+                if (item.post_match_satisfaction >= 8) return { icon: '😊', text: 'Great match!' };
+                break;
+            
+            case 'rest_days':
+                if (item.energy_level >= 8) return { icon: '🔋', text: 'Well rested!' };
+                if (item.motivation_level >= 8) return { icon: '🎯', text: 'Motivated!' };
+                break;
+        }
+        return null;
     }
 
     startActivityLogging(activityType) {
@@ -525,51 +936,51 @@ class MobileDashboard {
             'rest_day': '😴'
         };
 
-        const titles = {
-            'fitness': this.formatFitnessTitle(entry),
-            'cricket_coaching': this.formatCoachingTitle(entry),
-            'cricket_match': this.formatMatchTitle(entry),
-            'rest_day': this.formatRestDayTitle(entry)
-        };
-
-        const mainInfo = this.getMainInfo(entry);
-        const description = this.getEntryDescription(entry);
-        const tags = this.getEntryTags(entry);
+        const icon = icons[entry.type] || '📝';
+        const title = this.formatActivityTitle(entry);
+        const timeAgo = this.formatRelativeTime(new Date(entry.created_at));
+        
+        // Get key metrics based on activity type
+        const metrics = this.getActivityMetrics(entry);
+        const highlight = this.getActivityHighlight(entry);
 
         return `
-            <div class="entry-card ${entry.type}" data-entry-id="${entry.id}" data-type="${entry.type}">
-                <div class="entry-header">
-                    <h3 class="entry-title">
-                        <span class="entry-icon">${icons[entry.type]}</span>
-                        ${titles[entry.type]}
-                    </h3>
-                    <div class="entry-date">${this.formatDate(entry.created_at)}</div>
+            <div class="entry-card ${entry.type}" onclick="window.mobileDashboard.showActivityDetails(${JSON.stringify(entry).replace(/"/g, '&quot;')})">
+                <div class="entry-card-header">
+                    <div class="entry-icon-container">
+                        <span class="entry-icon">${icon}</span>
+                    </div>
+                    <div class="entry-main-info">
+                        <div class="entry-title">${title}</div>
+                        <div class="entry-time">${timeAgo}</div>
+                    </div>
+                    <div class="entry-confidence">
+                        ${Math.round((entry.confidence_score || 0) * 100)}%
+                    </div>
                 </div>
                 
-                <div class="entry-content">
-                    <div class="entry-main-info">
-                        ${mainInfo.map(info => `
-                            <div class="entry-info-item">
-                                <div class="entry-info-label">${info.label}</div>
-                                <div class="entry-info-value">${info.value}</div>
+                ${metrics.length > 0 ? `
+                    <div class="entry-metrics">
+                        ${metrics.map(metric => `
+                            <div class="entry-metric">
+                                <span class="metric-label">${metric.label}</span>
+                                <span class="metric-value">${metric.value}</span>
                             </div>
                         `).join('')}
                     </div>
-                    
-                    ${description ? `<div class="entry-description">"${description}"</div>` : ''}
-                    
-                    <div class="entry-tags">
-                        ${tags.map(tag => `<span class="entry-tag ${tag.class}">${tag.text}</span>`).join('')}
+                ` : ''}
+                
+                ${highlight ? `
+                    <div class="entry-highlight">
+                        <span class="highlight-icon">${highlight.icon}</span>
+                        <span class="highlight-text">${highlight.text}</span>
                     </div>
-                </div>
+                ` : ''}
                 
                 <div class="entry-footer">
                     <span class="entry-id">ID: ${entry.id}</span>
-                    <div class="entry-confidence">
-                        <span>${Math.round((entry.confidence_score || 0) * 100)}%</span>
-                        <div class="confidence-bar">
-                            <div class="confidence-fill" style="width: ${(entry.confidence_score || 0) * 100}%"></div>
-                        </div>
+                    <div class="click-indicator">
+                        <span>👆 Tap for details</span>
                     </div>
                 </div>
             </div>
