@@ -1111,9 +1111,28 @@
                 });
             });
 
+            // Initialize Mobile Dashboard
+            if (typeof MobileDashboard !== 'undefined') {
+                window.mobileDashboard = new MobileDashboard();
+                console.log('✅ MobileDashboard initialized successfully');
+            } else {
+                console.error('❌ MobileDashboard class not found');
+            }
+
             console.log('🏏 Cricket Fitness Tracker Enhanced loaded');
             console.log('Mobile-first interface with working voice recording');
         });
     </script>
+
+    <!-- Activity Details Modal -->
+    <div id="activityModal" class="modal" style="display: none;">
+        <div class="modal-backdrop" onclick="window.mobileDashboard.closeActivityModal()"></div>
+        <div class="modal-container">
+            <div id="activityModalContent" class="modal-content">
+                <!-- Content will be populated by JavaScript -->
+            </div>
+        </div>
+    </div>
+
 </body>
 </html> 

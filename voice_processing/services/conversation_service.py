@@ -1,6 +1,5 @@
 """Conversation service for managing multi-turn voice interactions."""
 
-import json
 import logging
 from datetime import datetime
 from typing import Any
@@ -37,57 +36,77 @@ class ConversationService:
         """Initialize conversation service."""
         self._client: AsyncOpenAI | None = None
         self.active_conversations: dict[str, ConversationContext] = {}
+        self.max_turns = 8  # Maximum conversation turns before forcing completion
 
-        # Data field requirements for each activity type
+        # Define required and optional fields for each activity type
         self.required_fields = {
             ActivityType.FITNESS: [
                 "fitness_type",
                 "duration_minutes",
                 "intensity",
-                "details",
                 "mental_state",
                 "energy_level",
             ],
             ActivityType.CRICKET_COACHING: [
-                "activity",
+                "session_type",
+                "duration_minutes",
                 "what_went_well",
                 "areas_for_improvement",
+                "self_assessment_score",
+                "confidence_level",
+                "focus_level",
+                "learning_satisfaction",
                 "mental_state",
             ],
             ActivityType.CRICKET_MATCH: [
                 "match_type",
-                "runs_scored",
-                "mental_state_pre_match",
-                "mental_state_during_batting",
+                "opposition_strength",
+                "pre_match_nerves",
+                "post_match_satisfaction",
+                "mental_state",
             ],
             ActivityType.REST_DAY: [
-                "activities",
-                "recovery_quality",
+                "rest_type",
+                "physical_state",
+                "fatigue_level",
+                "energy_level",
+                "motivation_level",
+                "mood_description",
                 "mental_state",
             ],
         }
 
-        # Optional fields that enhance data quality
         self.optional_fields = {
             ActivityType.FITNESS: [
+                "details",
                 "distance_km",
                 "location",
-                "calories_burned",
+                "notes",
             ],
             ActivityType.CRICKET_COACHING: [
                 "coach_feedback",
-                "self_assessment_score",
                 "skills_practiced",
+                "difficulty_level",
+                "notes",
             ],
             ActivityType.CRICKET_MATCH: [
+                "runs_scored",
                 "balls_faced",
-                "boundaries",
+                "boundaries_4s",
+                "boundaries_6s",
+                "how_out",
+                "key_shots_played",
                 "catches_taken",
-                "opposition_strength",
+                "catches_dropped",
+                "stumpings",
+                "notes",
             ],
             ActivityType.REST_DAY: [
+                "soreness_level",
+                "training_reflections",
+                "goals_concerns",
+                "recovery_activities",
                 "notes",
-                "physical_state",
             ],
         }
 
@@ -138,79 +157,92 @@ class ConversationService:
         transcript_confidence: float = 0.9,
     ) -> ConversationAnalysis:
         """
-        Process user input and determine next steps in conversation.
+        Process user input and return conversation analysis.
 
         Args:
-            session_id: Session identifier
+            session_id: Unique session identifier
             user_input: User's voice input (transcript)
             transcript_confidence: Confidence score from speech-to-text
 
         Returns:
-            Analysis of conversation state and next steps
+            ConversationAnalysis with next steps for the conversation
 
         """
         context = self.get_conversation(session_id)
         if not context:
             raise ConversationServiceError(f"No active conversation for session {session_id}")
 
-        # Update conversation history
-        context.conversation_history.append(
+        logger.info(
+            "Processing input for session %s (turn %d): %s",
+            session_id,
+            context.turn_count + 1,
+            user_input[:100],
+        )
+
+        # Increment turn count and add transcript to history
+        context.turn_count += 1
+
+        # **NEW**: Track all transcripts with turn information
+        if not hasattr(context, "transcript_history"):
+            context.transcript_history = []
+
+        context.transcript_history.append(
             {
-                "turn": str(context.turn_count + 1),
-                "user": user_input,
-                "timestamp": datetime.utcnow().isoformat(),
+                "turn": context.turn_count,
+                "transcript": user_input,
+                "confidence": transcript_confidence,
             },
         )
-        context.turn_count += 1
-        context.updated_at = datetime.utcnow()
 
-        # Extract data from current input
+        # Extract new data from user input
         extracted_data = await self._extract_data_from_input(
-            user_input,
-            context.activity_type,
-            context.collected_data,
+            user_input=user_input,
+            activity_type=context.activity_type,
+            existing_data=context.collected_data,
         )
 
-        # Merge with existing data
+        # Update collected data with new extractions
         context.collected_data.update(extracted_data)
 
         # Analyze data completeness
-        completeness = self._analyze_data_completeness(
+        data_completeness = self._analyze_data_completeness(
             context.collected_data,
             context.activity_type,
             transcript_confidence,
         )
 
-        # Determine next steps
-        if completeness.is_complete or context.turn_count >= 8:  # Max 8 turns
-            # Generate final output
-            context.state = ConversationState.COMPLETED
-            return ConversationAnalysis(
-                data_completeness=completeness,
-                next_question=None,
-                should_continue=False,
-                can_generate_final_output=True,
-                analysis_confidence=completeness.confidence_score,
-                reasoning="Data collection complete or max turns reached",
+        # Determine if we should ask follow-up questions
+        should_continue = not data_completeness.is_complete and context.turn_count < self.max_turns
+
+        # Generate follow-up question if needed
+        next_question = None
+        if should_continue and data_completeness.missing_fields:
+            next_question = await self._generate_follow_up_question(
+                context.collected_data,
+                context.activity_type,
+                data_completeness.missing_fields,
             )
 
-        # Generate follow-up question
-        next_question = await self._generate_follow_up_question(
-            context.collected_data,
-            context.activity_type,
-            completeness.missing_fields,
-        )
-
-        context.state = ConversationState.ASKING_FOLLOWUP
-
-        return ConversationAnalysis(
-            data_completeness=completeness,
+        # Create analysis result
+        analysis = ConversationAnalysis(
+            data_completeness=data_completeness,
             next_question=next_question,
-            should_continue=True,
-            can_generate_final_output=False,
-            analysis_confidence=0.85,
-            reasoning=f"Need more data for fields: {', '.join(completeness.missing_fields[:3])}",
+            should_continue=should_continue,
+            can_generate_final_output=data_completeness.is_complete
+            or context.turn_count >= self.max_turns,
+            analysis_confidence=data_completeness.confidence_score,
+            reasoning=f"Turn {context.turn_count}: {'Complete' if data_completeness.is_complete else f'Missing {len(data_completeness.missing_fields)} fields'}",
         )
+
+        logger.info(
+            "Analysis for session %s: continue=%s, complete=%s, missing_fields=%s",
+            session_id,
+            analysis.should_continue,
+            analysis.can_generate_final_output,
+            data_completeness.missing_fields,
+        )
+
+        return analysis
 
     @observe(capture_input=True, capture_output=True)
     async def _extract_data_from_input(
@@ -302,123 +334,301 @@ Map similar terms to the allowed values. Extract only information explicitly men
                 logger.info("Extracted structured fitness data: %s", list(extracted_data.keys()))
                 return extracted_data
 
-            # For non-fitness activities, use the original approach
-            system_prompt = self._create_extraction_prompt(activity_type, existing_data)
+            # For cricket match activities, use structured outputs
+            if activity_type == ActivityType.CRICKET_MATCH:
+                from fitness_tracking.schemas.cricket import CricketMatchDataExtraction
 
-            completion = await client.chat.completions.create(
-                model=settings.openai.gpt_model,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": f"Extract data from: {user_input}"},
-                ],
-                temperature=0.1,  # Low temperature for consistent extraction
-                max_tokens=500,
-            )
+                system_prompt = """You are an expert cricket match analyzer for young cricket players.
 
-            response_text = completion.choices[0].message.content or ""
+CRITICAL: You MUST extract cricket match data and return it in the EXACT format specified by the schema.
 
-            # Parse the response to extract key-value pairs
-            extracted_data = self._parse_extraction_response(response_text, activity_type)
+IMPORTANT MAPPINGS - Use descriptive terms, repository will normalize:
+- For opposition_strength: Use terms like "very weak", "weak", "easy", "average", "strong", "tough", "very strong"
+- For pre_match_nerves: Use terms like "very nervous", "nervous", "confident", "very confident", "excited"  
+- For post_match_satisfaction: Use terms like "disappointed", "not satisfied", "satisfied", "very satisfied"
+- For match_type: Use "tournament" for ODI/T20/competitive matches, "practice" for friendly matches
 
-            logger.info("Extracted data from input: %s", list(extracted_data.keys()))
-            return extracted_data
+Extract only information explicitly mentioned. Use null for missing data."""
+
+                logger.info(f"🏏 Extracting cricket match data from: '{user_input}'")
+                logger.info(f"🏏 Using system prompt: {system_prompt[:200]}...")
+
+                completion = await client.beta.chat.completions.parse(
+                    model=settings.openai.gpt_model,
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {
+                            "role": "user",
+                            "content": f"Extract cricket match data from: {user_input}",
+                        },
+                    ],
+                    response_format=CricketMatchDataExtraction,
+                    temperature=0.1,
+                    max_tokens=500,
+                )
+
+                logger.info(
+                    f"🏏 OpenAI completion response received, choices: {len(completion.choices)}",
+                )
+
+                if not completion.choices:
+                    logger.warning("No choices in OpenAI response for cricket match extraction")
+                    return self._fallback_extraction(user_input, activity_type)
+
+                choice = completion.choices[0]
+                logger.info(f"🏏 Choice message parsed: {choice.message.parsed is not None}")
+                logger.info(f"🏏 Choice message refusal: {choice.message.refusal}")
+
+                if not choice.message.parsed:
+                    logger.warning("No parsed response received from OpenAI for cricket match")
+                    if choice.message.refusal:
+                        logger.warning(
+                            "OpenAI refused to parse cricket match data: %s",
+                            choice.message.refusal,
+                        )
+                    return self._fallback_extraction(user_input, activity_type)
+
+                cricket_data = choice.message.parsed
+                logger.info(f"🏏 Raw cricket_data object: {cricket_data}")
+                logger.info(
+                    f"🏏 cricket_data.match_type: {getattr(cricket_data, 'match_type', 'NOT_SET')}",
+                )
+                logger.info(
+                    f"🏏 cricket_data.runs_scored: {getattr(cricket_data, 'runs_scored', 'NOT_SET')}",
+                )
+                logger.info(
+                    f"🏏 cricket_data.balls_faced: {getattr(cricket_data, 'balls_faced', 'NOT_SET')}",
+                )
+
+                extracted_data = {}
+
+                # Add all non-null fields
+                if cricket_data.match_type:
+                    extracted_data["match_type"] = cricket_data.match_type
+                    logger.info(f"🏏 Added match_type: {cricket_data.match_type}")
+                if cricket_data.opposition_strength:
+                    extracted_data["opposition_strength"] = cricket_data.opposition_strength
+                    logger.info(f"🏏 Added opposition_strength: {cricket_data.opposition_strength}")
+                if cricket_data.runs_scored is not None:
+                    extracted_data["runs_scored"] = cricket_data.runs_scored
+                    logger.info(f"🏏 Added runs_scored: {cricket_data.runs_scored}")
+                if cricket_data.balls_faced is not None:
+                    extracted_data["balls_faced"] = cricket_data.balls_faced
+                    logger.info(f"🏏 Added balls_faced: {cricket_data.balls_faced}")
+                if cricket_data.boundaries_4s is not None:
+                    extracted_data["boundaries_4s"] = cricket_data.boundaries_4s
+                    logger.info(f"🏏 Added boundaries_4s: {cricket_data.boundaries_4s}")
+                if cricket_data.boundaries_6s is not None:
+                    extracted_data["boundaries_6s"] = cricket_data.boundaries_6s
+                    logger.info(f"🏏 Added boundaries_6s: {cricket_data.boundaries_6s}")
+                if cricket_data.how_out:
+                    extracted_data["how_out"] = cricket_data.how_out
+                if cricket_data.key_shots_played:
+                    extracted_data["key_shots_played"] = cricket_data.key_shots_played
+                if cricket_data.catches_taken is not None:
+                    extracted_data["catches_taken"] = cricket_data.catches_taken
+                if cricket_data.catches_dropped is not None:
+                    extracted_data["catches_dropped"] = cricket_data.catches_dropped
+                if cricket_data.stumpings is not None:
+                    extracted_data["stumpings"] = cricket_data.stumpings
+                if cricket_data.pre_match_nerves:
+                    extracted_data["pre_match_nerves"] = cricket_data.pre_match_nerves
+                if cricket_data.post_match_satisfaction:
+                    extracted_data["post_match_satisfaction"] = cricket_data.post_match_satisfaction
+                if cricket_data.mental_state:
+                    extracted_data["mental_state"] = cricket_data.mental_state
+                if cricket_data.notes:
+                    extracted_data["notes"] = cricket_data.notes
+
+                logger.info(f"🏏 Final extracted_data: {extracted_data}")
+                logger.info(
+                    "Extracted structured cricket match data: %s",
+                    list(extracted_data.keys()),
+                )
+
+                # Filter out 'null' string values - these represent missing data
+                filtered_data = {
+                    k: v for k, v in extracted_data.items() if v != "null" and v is not None
+                }
+                logger.info(f"🏏 Filtered data (removing 'null' values): {filtered_data}")
+
+                return filtered_data
+
+            # For cricket coaching activities, use structured outputs
+            if activity_type == ActivityType.CRICKET_COACHING:
+                from fitness_tracking.schemas.cricket import CricketCoachingDataExtraction
+
+                system_prompt = """You are an expert cricket coaching session analyzer for young cricket players.
+
+CRITICAL: You MUST extract cricket coaching data and return it in the EXACT format specified by the schema.
+
+IMPORTANT MAPPINGS - Use descriptive terms, repository will normalize:
+- For confidence_level: Use terms like "very low", "low", "confident", "very confident"
+- For focus_level: Use terms like "distracted", "okay", "focused", "very focused"
+- For self_rating: Use terms like "poor", "below average", "good", "excellent"
+
+Extract only information explicitly mentioned. Use null for missing data."""
+
+                completion = await client.beta.chat.completions.parse(
+                    model=settings.openai.gpt_model,
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {
+                            "role": "user",
+                            "content": f"Extract cricket coaching data from: {user_input}",
+                        },
+                    ],
+                    response_format=CricketCoachingDataExtraction,
+                    temperature=0.1,
+                    max_tokens=500,
+                )
+
+                if not completion.choices:
+                    logger.warning("No choices in OpenAI response for cricket coaching extraction")
+                    return self._fallback_extraction(user_input, activity_type)
+
+                choice = completion.choices[0]
+                if not choice.message.parsed:
+                    logger.warning("No parsed response received from OpenAI for cricket coaching")
+                    if choice.message.refusal:
+                        logger.warning(
+                            "OpenAI refused to parse cricket coaching data: %s",
+                            choice.message.refusal,
+                        )
+                    return self._fallback_extraction(user_input, activity_type)
+
+                coaching_data = choice.message.parsed
+                extracted_data = {}
+
+                # Add all non-null fields
+                if coaching_data.session_type:
+                    extracted_data["session_type"] = coaching_data.session_type
+                if coaching_data.duration_minutes is not None:
+                    extracted_data["duration_minutes"] = coaching_data.duration_minutes
+                if coaching_data.what_went_well:
+                    extracted_data["what_went_well"] = coaching_data.what_went_well
+                if coaching_data.areas_for_improvement:
+                    extracted_data["areas_for_improvement"] = coaching_data.areas_for_improvement
+                if coaching_data.skills_practiced:
+                    extracted_data["skills_practiced"] = coaching_data.skills_practiced
+                if coaching_data.self_assessment_score:
+                    extracted_data["self_assessment_score"] = coaching_data.self_assessment_score
+                if coaching_data.confidence_level:
+                    extracted_data["confidence_level"] = coaching_data.confidence_level
+                if coaching_data.focus_level:
+                    extracted_data["focus_level"] = coaching_data.focus_level
+                if coaching_data.mental_state:
+                    extracted_data["mental_state"] = coaching_data.mental_state
+                if coaching_data.coach_feedback:
+                    extracted_data["coach_feedback"] = coaching_data.coach_feedback
+                if coaching_data.difficulty_level:
+                    extracted_data["difficulty_level"] = coaching_data.difficulty_level
+                if coaching_data.learning_satisfaction:
+                    extracted_data["learning_satisfaction"] = coaching_data.learning_satisfaction
+                if coaching_data.notes:
+                    extracted_data["notes"] = coaching_data.notes
+
+                logger.info(
+                    "Extracted structured cricket coaching data: %s",
+                    list(extracted_data.keys()),
+                )
+
+                # Filter out 'null' string values - these represent missing data
+                filtered_data = {
+                    k: v for k, v in extracted_data.items() if v != "null" and v is not None
+                }
+                logger.info(f"🏏 Filtered coaching data (removing 'null' values): {filtered_data}")
+
+                return filtered_data
+
+            # For rest day activities, use structured outputs
+            if activity_type == ActivityType.REST_DAY:
+                from fitness_tracking.schemas.cricket import RestDayDataExtraction
+
+                system_prompt = """You are an expert rest day analyzer for young cricket players.
+
+CRITICAL: You MUST extract rest day data and return it in the EXACT format specified by the schema.
+
+IMPORTANT MAPPINGS - Use descriptive terms, repository will normalize:
+- For fatigue_level: Use terms like "exhausted", "tired", "okay", "fresh", "energetic"
+- For energy_level: Use terms like "very low", "low", "average", "high", "very high"
+- For motivation_level: Use terms like "unmotivated", "low", "motivated", "very motivated"
+- For soreness_level: Use terms like "very sore", "sore", "a bit sore", "fine"
+
+Extract only information explicitly mentioned. Use null for missing data."""
+
+                completion = await client.beta.chat.completions.parse(
+                    model=settings.openai.gpt_model,
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": f"Extract rest day data from: {user_input}"},
+                    ],
+                    response_format=RestDayDataExtraction,
+                    temperature=0.1,
+                    max_tokens=500,
+                )
+
+                if not completion.choices:
+                    logger.warning("No choices in OpenAI response for rest day extraction")
+                    return self._fallback_extraction(user_input, activity_type)
+
+                choice = completion.choices[0]
+                if not choice.message.parsed:
+                    logger.warning("No parsed response received from OpenAI for rest day")
+                    if choice.message.refusal:
+                        logger.warning(
+                            "OpenAI refused to parse rest day data: %s",
+                            choice.message.refusal,
+                        )
+                    return self._fallback_extraction(user_input, activity_type)
+
+                rest_data = choice.message.parsed
+                extracted_data = {}
+
+                # Add all non-null fields
+                if rest_data.rest_type:
+                    extracted_data["rest_type"] = rest_data.rest_type
+                if rest_data.physical_state:
+                    extracted_data["physical_state"] = rest_data.physical_state
+                if rest_data.fatigue_level:
+                    extracted_data["fatigue_level"] = rest_data.fatigue_level
+                if rest_data.energy_level:
+                    extracted_data["energy_level"] = rest_data.energy_level
+                if rest_data.motivation_level:
+                    extracted_data["motivation_level"] = rest_data.motivation_level
+                if rest_data.mood_description:
+                    extracted_data["mood_description"] = rest_data.mood_description
+                if rest_data.mental_state:
+                    extracted_data["mental_state"] = rest_data.mental_state
+                if rest_data.soreness_level:
+                    extracted_data["soreness_level"] = rest_data.soreness_level
+                if rest_data.training_reflections:
+                    extracted_data["training_reflections"] = rest_data.training_reflections
+                if rest_data.goals_concerns:
+                    extracted_data["goals_concerns"] = rest_data.goals_concerns
+                if rest_data.recovery_activities:
+                    extracted_data["recovery_activities"] = rest_data.recovery_activities
+                if rest_data.notes:
+                    extracted_data["notes"] = rest_data.notes
+
+                logger.info("Extracted structured rest day data: %s", list(extracted_data.keys()))
+
+                # Filter out 'null' string values - these represent missing data
+                filtered_data = {
+                    k: v for k, v in extracted_data.items() if v != "null" and v is not None
+                }
+                logger.info(f"😴 Filtered rest day data (removing 'null' values): {filtered_data}")
+
+                return filtered_data
+
+            # All activity types now use structured outputs - no fallback needed
+            logger.error(f"Unknown activity type: {activity_type}")
+            return self._fallback_extraction(user_input, activity_type)
 
         except Exception as e:
             logger.exception("Failed to extract data from input: %s", e)
             # Fallback: try simple keyword extraction
             return self._fallback_extraction(user_input, activity_type)
-
-    def _create_extraction_prompt(
-        self,
-        activity_type: ActivityType,
-        existing_data: dict[str, Any],
-    ) -> str:
-        """Create system prompt for data extraction."""
-        # Defensive programming: handle both enum and string values
-        if isinstance(activity_type, str):
-            logger.warning(
-                "activity_type received as string '%s', converting to enum",
-                activity_type,
-            )
-            try:
-                activity_type = ActivityType(activity_type)
-            except ValueError:
-                logger.error("Invalid activity_type string: %s", activity_type)
-                # Fallback to a default
-                activity_type = ActivityType.FITNESS
-
-        activity_value = (
-            activity_type.value if hasattr(activity_type, "value") else str(activity_type)
-        )
-
-        if activity_type == ActivityType.FITNESS:
-            base_prompt = f"""You are extracting {activity_value} data from a 15-year-old cricket player's voice input.
-
-CRITICAL VALIDATION RULES:
-- fitness_type MUST be exactly one of: "running", "strength_training", "cricket_specific", "cardio", "flexibility", "general_fitness"
-- Map variations: jog/jogging -> "running", gym/weights -> "strength_training", etc.
-- intensity MUST be exactly: "low", "medium", or "high"
-- energy_level MUST be integer 1-5
-
-Required fields for {activity_value}:
-{", ".join(self.required_fields.get(activity_type, []))}
-
-Optional fields:
-{", ".join(self.optional_fields.get(activity_type, []))}
-
-Current collected data: {existing_data}
-
-Return ONLY a JSON object with extracted fields. Use null for fields not mentioned.
-Example: {{"fitness_type": "running", "duration_minutes": 30, "intensity": "medium", "details": "morning jog"}}
-
-IMPORTANT: Only extract information explicitly mentioned in the user's input. Do not make assumptions."""
-        else:
-            base_prompt = f"""You are extracting {activity_value} data from a 15-year-old cricket player's voice input.
-
-IMPORTANT: Only extract information that is explicitly mentioned in the user's input. Do not make assumptions.
-
-Required fields for {activity_value}:
-{", ".join(self.required_fields.get(activity_type, []))}
-
-Optional fields:
-{", ".join(self.optional_fields.get(activity_type, []))}
-
-Current collected data: {existing_data}
-
-Return ONLY a JSON object with extracted fields. Use null for fields not mentioned.
-Example: {{"duration_minutes": 30, "intensity": "medium", "details": "morning session"}}"""
-
-        return base_prompt
-
-    def _parse_extraction_response(
-        self,
-        response: str,
-        activity_type: ActivityType,
-    ) -> dict[str, Any]:
-        """Parse OpenAI response to extract structured data."""
-        try:
-            # Try to find JSON in the response
-            start = response.find("{")
-            end = response.rfind("}") + 1
-
-            if start != -1 and end > start:
-                json_str = response[start:end]
-                data = json.loads(json_str)
-
-                # Filter to only expected fields
-                all_fields = self.required_fields.get(activity_type, []) + self.optional_fields.get(
-                    activity_type,
-                    [],
-                )
-
-                filtered_data = {k: v for k, v in data.items() if k in all_fields and v is not None}
-
-        except (json.JSONDecodeError, ValueError) as e:
-            logger.warning("Failed to parse JSON from response: %s", e)
-        else:
-            return filtered_data
-        # Fallback: empty dict
-        return {}
 
     def _fallback_extraction(
         self,
@@ -513,7 +723,7 @@ Example: {{"duration_minutes": 30, "intensity": "medium", "details": "morning se
             try:
                 activity_type = ActivityType(activity_type)
             except ValueError:
-                logger.error("Invalid activity_type string: %s", activity_type)
+                logger.exception("Invalid activity_type string")
                 # Fallback to a default
                 activity_type = ActivityType.FITNESS
 

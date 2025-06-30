@@ -225,25 +225,31 @@ class CricketCoachingDataExtraction(AppBaseModel):
     what_went_well: str = Field(..., description="What went well in the session")
     areas_for_improvement: str = Field(..., description="Areas that need improvement")
     skills_practiced: str = Field(..., description="Skills practiced during session")
-    self_assessment_score: int = Field(..., ge=1, le=10, description="Self-assessment score 1-10")
-    confidence_level: int = Field(..., ge=1, le=10, description="Confidence level during session")
-    focus_level: int = Field(..., ge=1, le=10, description="Focus level during session")
+    self_assessment_score: str = Field(
+        ...,
+        description="Self-assessment score - use descriptive terms like 'poor', 'below average', 'good', 'excellent'",
+    )
+    confidence_level: str = Field(
+        ...,
+        description="Confidence level - use descriptive terms like 'very low', 'low', 'confident', 'very confident'",
+    )
+    focus_level: str = Field(
+        ...,
+        description="Focus level - use descriptive terms like 'distracted', 'okay', 'focused', 'very focused'",
+    )
     mental_state: str = Field(..., description="Mental state during session")
 
     # Optional extracted fields
     coach_feedback: str | None = Field(None, description="Coach feedback if mentioned")
-    difficulty_level: int | None = Field(
+    difficulty_level: str | None = Field(
         None,
-        ge=1,
-        le=10,
-        description="Difficulty level of exercises",
+        description="Difficulty level - use descriptive terms like 'easy', 'moderate', 'challenging', 'very hard'",
     )
-    learning_satisfaction: int | None = Field(
+    learning_satisfaction: str | None = Field(
         None,
-        ge=1,
-        le=10,
-        description="Learning satisfaction",
+        description="Learning satisfaction - use descriptive terms like 'frustrated', 'satisfied', 'very satisfied'",
     )
+    notes: str | None = Field(None, description="Additional notes about the coaching session")
 
 
 # Cricket Match Schemas
@@ -412,9 +418,18 @@ class CricketMatchDataExtraction(AppBaseModel):
         ...,
         description="Type of match. Must be exactly one of: practice, tournament, school, club, other. Map similar terms: ODI/T20/Test -> tournament, friendly -> practice, etc.",
     )
-    opposition_strength: int = Field(..., ge=1, le=10, description="Opposition strength 1-10")
-    pre_match_nerves: int = Field(..., ge=1, le=10, description="Pre-match nerves level")
-    post_match_satisfaction: int = Field(..., ge=1, le=10, description="Post-match satisfaction")
+    opposition_strength: str = Field(
+        ...,
+        description="Opposition strength - use descriptive terms like 'very weak', 'weak', 'easy', 'average', 'strong', 'tough', 'very strong'",
+    )
+    pre_match_nerves: str = Field(
+        ...,
+        description="Pre-match nerves level - use descriptive terms like 'very nervous', 'nervous', 'confident', 'very confident', 'excited'",
+    )
+    post_match_satisfaction: str = Field(
+        ...,
+        description="Post-match satisfaction - use descriptive terms like 'disappointed', 'not satisfied', 'satisfied', 'very satisfied'",
+    )
     mental_state: str = Field(..., description="Overall mental state during match")
 
     # Optional batting statistics
@@ -429,6 +444,9 @@ class CricketMatchDataExtraction(AppBaseModel):
     catches_taken: int | None = Field(None, ge=0, description="Catches taken")
     catches_dropped: int | None = Field(None, ge=0, description="Catches dropped")
     stumpings: int | None = Field(None, ge=0, description="Stumpings completed")
+
+    # Additional notes
+    notes: str | None = Field(None, description="Additional notes about the match")
 
 
 # Rest Day Schemas
@@ -583,17 +601,30 @@ class RestDayDataExtraction(AppBaseModel):
         description="Type of rest day. Must be exactly one of: complete_rest, active_recovery, injury_recovery. Map similar terms: full rest/total rest -> complete_rest, light activity -> active_recovery, hurt/injured -> injury_recovery.",
     )
     physical_state: str = Field(..., description="Physical state during rest")
-    fatigue_level: int = Field(..., ge=1, le=10, description="Fatigue level 1-10")
-    energy_level: int = Field(..., ge=1, le=10, description="Energy level 1-10")
-    motivation_level: int = Field(..., ge=1, le=10, description="Motivation level 1-10")
+    fatigue_level: str = Field(
+        ...,
+        description="Fatigue level - use descriptive terms like 'exhausted', 'tired', 'okay', 'fresh', 'energetic'",
+    )
+    energy_level: str = Field(
+        ...,
+        description="Energy level - use descriptive terms like 'very low', 'low', 'average', 'high', 'very high'",
+    )
+    motivation_level: str = Field(
+        ...,
+        description="Motivation level - use descriptive terms like 'unmotivated', 'low', 'motivated', 'very motivated'",
+    )
     mood_description: str = Field(..., description="Mood description")
     mental_state: str = Field(..., description="Overall mental state during rest")
 
     # Optional extracted fields
-    soreness_level: int | None = Field(None, ge=1, le=10, description="Muscle soreness level 1-10")
+    soreness_level: str | None = Field(
+        None,
+        description="Muscle soreness level - use descriptive terms like 'very sore', 'sore', 'a bit sore', 'fine'",
+    )
     training_reflections: str | None = Field(None, description="Reflections on training")
     goals_concerns: str | None = Field(None, description="Goals and concerns")
     recovery_activities: str | None = Field(None, description="Recovery activities done")
+    notes: str | None = Field(None, description="Additional notes about the rest day")
 
 
 # Analytics Schemas

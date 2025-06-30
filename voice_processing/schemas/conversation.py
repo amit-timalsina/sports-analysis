@@ -39,6 +39,9 @@ class ConversationContext(AppBaseModel):
     # Conversation data
     collected_data: dict[str, Any] = Field(default_factory=dict)
     conversation_history: list[dict[str, str]] = Field(default_factory=list)
+    transcript_history: list[dict[str, Any]] = Field(
+        default_factory=list, description="All transcripts with metadata"
+    )
 
     # Tracking
     turn_count: int = 0

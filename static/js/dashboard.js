@@ -193,7 +193,7 @@ class MobileDashboard {
         quickStats.innerHTML = stats.map(stat => `
             <div class="stat-item">
                 <div class="stat-value-container">
-                    <span class="stat-value">${stat.value}</span>
+                <span class="stat-value">${stat.value}</span>
                     ${stat.trend ? `<span class="stat-trend">${stat.trend}</span>` : ''}
                 </div>
                 <div class="stat-label">${stat.description}</div>
@@ -281,300 +281,461 @@ class MobileDashboard {
             <h3>📋 Recent Activity</h3>
             <div class="recent-list">
                 ${recentItems.map(item => this.createRecentActivityCard(item, activityIcons)).join('')}
-            </div>
+                        </div>
         `;
     }
 
     createRecentActivityCard(item, activityIcons) {
         const icon = activityIcons[item.type] || '📝';
-        const title = this.formatActivityTitle(item);
-        const timeAgo = this.formatRelativeTime(item.timestamp);
+        const timeAgo = this.formatRelativeTime(new Date(item.created_at));
+        const confidence = Math.round((item.confidence_score || 0) * 100);
         
+        // Get transcript preview (first 60 characters)
+        const getTranscriptPreview = (transcript) => {
+            if (!transcript) return 'No transcript available';
+            
+            // Handle multi-turn transcripts - extract first meaningful content
+            if (transcript.includes('Turn ') && transcript.includes('(conf:')) {
+                const turns = transcript.split('\n\n').filter(turn => turn.trim());
+                if (turns.length > 0) {
+                    const firstTurn = turns[0];
+                    const lines = firstTurn.split('\n');
+                    const contentLines = lines.slice(1); // Skip header
+                    const content = contentLines.join(' ').trim();
+                    return content.length > 60 ? content.substring(0, 60) + '...' : content;
+                }
+            }
+            
+            // Single transcript
+            return transcript.length > 60 ? transcript.substring(0, 60) + '...' : transcript;
+        };
+        
+        const transcriptPreview = getTranscriptPreview(item.transcript);
+        const transcriptTurnCount = item.transcript && item.transcript.includes('Turn ') ? 
+            (item.transcript.match(/Turn \d+/g) || []).length : 1;
+
         // Get key metrics based on activity type
-        const metrics = this.getActivityMetrics(item);
-        const highlight = this.getActivityHighlight(item);
-        
+        const getKeyMetrics = (item) => {
+            switch (item.type) {
+                case 'fitness':
+                    return [
+                        item.duration_minutes ? `${item.duration_minutes}min` : null,
+                        item.intensity ? item.intensity.charAt(0).toUpperCase() + item.intensity.slice(1) : null,
+                        item.energy_level ? `Energy: ${item.energy_level}/5` : null
+                    ].filter(Boolean);
+                
+                case 'cricket_coaching':
+                    return [
+                        item.duration_minutes ? `${item.duration_minutes}min` : null,
+                        item.confidence_level ? `Confidence: ${item.confidence_level}/10` : null,
+                        item.focus_level ? `Focus: ${item.focus_level}/10` : null
+                    ].filter(Boolean);
+                
+                case 'cricket_matches':
+                    return [
+                        item.runs_scored !== null ? `${item.runs_scored} runs` : null,
+                        item.balls_faced !== null ? `${item.balls_faced} balls` : null,
+                        (item.runs_scored && item.balls_faced) ? `SR: ${Math.round((item.runs_scored / item.balls_faced) * 100)}%` : null
+                    ].filter(Boolean);
+                
+                case 'rest_days':
+                    return [
+                        item.energy_level ? `Energy: ${item.energy_level}/10` : null,
+                        item.fatigue_level ? `Fatigue: ${item.fatigue_level}/10` : null,
+                        item.rest_type ? item.rest_type.replace(/_/g, ' ') : null
+                    ].filter(Boolean);
+                
+                default:
+                    return [];
+            }
+        };
+
+        const metrics = getKeyMetrics(item);
+        const activityTitle = this.formatActivityTitle(item);
+
         return `
-            <div class="recent-activity-card" onclick="window.mobileDashboard.showActivityDetails(${JSON.stringify(item).replace(/"/g, '&quot;')})">
-                <div class="recent-card-header">
-                    <div class="recent-icon-container">
-                        <span class="recent-icon">${icon}</span>
+            <div class="recent-activity-card ${item.type}" onclick="window.mobileDashboard.showActivityDetails(${JSON.stringify(item).replace(/"/g, '&quot;')})">
+                <div class="activity-card-header">
+                    <div class="activity-icon-container">
+                        <span class="activity-icon">${icon}</span>
                     </div>
-                    <div class="recent-main-info">
-                        <div class="recent-title">${title}</div>
-                        <div class="recent-time">${timeAgo}</div>
-                    </div>
-                    <div class="recent-confidence">
-                        ${Math.round((item.confidence_score || 0) * 100)}%
+                    <div class="activity-main-info">
+                        <div class="activity-title">${activityTitle}</div>
+                        <div class="activity-meta">
+                            <span class="activity-time">${timeAgo}</span>
+                            <span class="activity-confidence" title="Speech Recognition Confidence">${confidence}%</span>
+                            ${transcriptTurnCount > 1 ? `<span class="turn-indicator" title="Multi-turn conversation">💬 ${transcriptTurnCount} turns</span>` : ''}
+                        </div>
                     </div>
                 </div>
                 
                 ${metrics.length > 0 ? `
-                    <div class="recent-metrics">
-                        ${metrics.map(metric => `
-                            <div class="recent-metric">
-                                <span class="metric-label">${metric.label}</span>
-                                <span class="metric-value">${metric.value}</span>
-                            </div>
-                        `).join('')}
+                    <div class="activity-quick-metrics">
+                        ${metrics.slice(0, 3).map(metric => `<span class="quick-metric">${metric}</span>`).join('')}
                     </div>
                 ` : ''}
                 
-                ${highlight ? `
-                    <div class="recent-highlight">
-                        <span class="highlight-icon">${highlight.icon}</span>
-                        <span class="highlight-text">${highlight.text}</span>
+                <div class="activity-transcript-preview">
+                    <div class="transcript-preview-header">
+                        <span class="transcript-icon">🎤</span>
+                        <span class="transcript-label">What you said:</span>
                     </div>
-                ` : ''}
+                    <div class="transcript-preview-content" title="${item.transcript || 'No transcript'}">${transcriptPreview}</div>
+                </div>
                 
-                <div class="click-indicator">
-                    <span>👆 Tap for details</span>
+                <div class="activity-card-footer">
+                    <span class="activity-id">ID: ${item.id}</span>
+                    <div class="click-indicator">
+                        <span>👆 Tap for full details</span>
+                    </div>
                 </div>
             </div>
         `;
     }
 
     showActivityDetails(item) {
-        // Create and show detailed modal
-        this.createActivityDetailsModal(item);
-    }
-
-    createActivityDetailsModal(item) {
-        // Remove existing modal if any
-        const existingModal = document.getElementById('activity-details-modal');
-        if (existingModal) {
-            existingModal.remove();
-        }
-
-        const modal = document.createElement('div');
-        modal.id = 'activity-details-modal';
-        modal.className = 'activity-details-modal';
+        const modal = document.getElementById('activityModal');
+        const modalContent = document.getElementById('activityModalContent');
         
-        const activityIcons = {
-            fitness: '🏃',
-            cricket_coaching: '🏏',
-            cricket_matches: '🏆',
-            rest_days: '😴'
-        };
-
-        const icon = activityIcons[item.type] || '📝';
+        const icon = this.getActivityIcon(item.type);
         const title = this.formatActivityTitle(item);
-        const fullDetails = this.getFullActivityDetails(item);
-        const timeAgo = this.formatRelativeTime(item.timestamp);
-        const fullDate = new Date(item.created_at).toLocaleDateString('en-US', {
-            weekday: 'long',
-            year: 'numeric',
-            month: 'long',
-            day: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit'
-        });
-
-        modal.innerHTML = `
-            <div class="activity-details-content">
-                <div class="details-header">
-                    <div class="details-title-section">
-                        <div class="details-icon">${icon}</div>
-                        <div class="details-title-info">
-                            <h3 class="details-title">${title}</h3>
-                            <div class="details-subtitle">${timeAgo} • ${fullDate}</div>
-                        </div>
-                    </div>
-                    <button class="details-close-btn" onclick="this.parentElement.parentElement.parentElement.remove()">×</button>
-                </div>
-
-                <div class="details-body">
-                    <div class="details-confidence">
-                        <div class="confidence-header">
-                            <span class="confidence-label">Confidence Score</span>
-                            <span class="confidence-percentage">${Math.round((item.confidence_score || 0) * 100)}%</span>
-                        </div>
-                        <div class="confidence-bar-container">
-                            <div class="confidence-bar-full">
-                                <div class="confidence-bar-fill" style="width: ${(item.confidence_score || 0) * 100}%"></div>
+        
+        // Format transcript to handle multiple turns
+        const formatTranscript = (transcript) => {
+            if (!transcript) return '<div class="no-transcript">No transcript available</div>';
+            
+            // Check if transcript contains multiple turns (has "Turn X (conf:" pattern)
+            if (transcript.includes('Turn ') && transcript.includes('(conf:')) {
+                // Split by double newline and format each turn
+                const turns = transcript.split('\n\n').filter(turn => turn.trim());
+                
+                if (turns.length > 1) {
+                    // Multiple turns - show conversation flow
+                    const conversationHeader = `
+                        <div class="conversation-summary">
+                            <div class="conversation-stats">
+                                <span class="turn-count">💬 ${turns.length} conversation turns</span>
+                                <span class="conversation-flow">🔄 Multi-turn interaction</span>
                             </div>
                         </div>
-                    </div>
-
-                    ${fullDetails.transcript ? `
-                        <div class="details-section">
-                            <h4 class="section-title">📝 What You Said</h4>
-                            <div class="transcript-content">"${fullDetails.transcript}"</div>
-                        </div>
-                    ` : ''}
-
-                    <div class="details-section">
-                        <h4 class="section-title">📊 Activity Details</h4>
-                        <div class="details-grid">
-                            ${fullDetails.details.map(detail => `
-                                <div class="detail-item">
-                                    <div class="detail-label">${detail.label}</div>
-                                    <div class="detail-value">${detail.value}</div>
+                    `;
+                    
+                    const formattedTurns = turns.map((turn, index) => {
+                        const lines = turn.split('\n');
+                        const headerLine = lines[0];
+                        const contentLines = lines.slice(1);
+                        
+                        // Extract confidence from header like "Turn 1 (conf: 0.95):"
+                        const confMatch = headerLine.match(/conf:\s*([\d.]+)/);
+                        const confidence = confMatch ? (parseFloat(confMatch[1]) * 100).toFixed(0) : 'N/A';
+                        const turnNumber = index + 1;
+                        
+                        return `
+                            <div class="transcript-turn" data-turn="${turnNumber}">
+                                <div class="turn-header">
+                                    <div class="turn-info">
+                                        <span class="turn-number">Turn ${turnNumber}</span>
+                                        <span class="turn-confidence" title="Speech Recognition Confidence">
+                                            ${confidence}% confidence
+                                        </span>
+                                    </div>
+                                    ${index === 0 ? '<span class="turn-badge initial">Initial</span>' : 
+                                      index === turns.length - 1 ? '<span class="turn-badge final">Final</span>' : 
+                                      '<span class="turn-badge follow-up">Follow-up</span>'}
                                 </div>
-                            `).join('')}
+                                <div class="turn-content">
+                                    ${contentLines.length > 0 ? contentLines.join('<br>') : 'No additional content'}
+                                </div>
+                            </div>
+                        `;
+                    }).join('');
+                    
+                    return conversationHeader + '<div class="conversation-turns">' + formattedTurns + '</div>';
+                } else {
+                    // Single turn from multi-turn format
+                    const lines = turns[0].split('\n');
+                    const headerLine = lines[0];
+                    const contentLines = lines.slice(1);
+                    const confMatch = headerLine.match(/conf:\s*([\d.]+)/);
+                    const confidence = confMatch ? (parseFloat(confMatch[1]) * 100).toFixed(0) : 'N/A';
+                    
+                    return `
+                        <div class="single-turn-conversation">
+                            <div class="turn-header single">
+                                <span class="turn-number">Single Turn</span>
+                                <span class="turn-confidence">${confidence}% confidence</span>
+                            </div>
+                            <div class="turn-content single">
+                                ${contentLines.length > 0 ? contentLines.join('<br>') : 'No additional content'}
+                            </div>
                         </div>
+                    `;
+                }
+            } else {
+                // Legacy single transcript format
+                return `
+                    <div class="transcript-single legacy">
+                        <div class="single-transcript-header">
+                            <span class="transcript-type">📝 Direct Transcript</span>
+                            <span class="transcript-note">Single recording</span>
+                        </div>
+                        <div class="single-transcript-content">${transcript}</div>
                     </div>
-
-                    ${fullDetails.notes ? `
-                        <div class="details-section">
-                            <h4 class="section-title">📝 Additional Notes</h4>
-                            <div class="notes-content">${fullDetails.notes}</div>
+                `;
+            }
+        };
+        
+        modalContent.innerHTML = `
+            <div class="modal-header">
+                <div class="modal-title">
+                    <span class="modal-icon">${icon}</span>
+                    <span>${title}</span>
+                </div>
+                <span class="close-modal" onclick="window.mobileDashboard.closeActivityModal()">&times;</span>
+            </div>
+            
+            <div class="modal-body">
+                <div class="detail-section">
+                    <h4>📅 Activity Information</h4>
+                    <div class="detail-grid">
+                        <div class="detail-item">
+                            <span class="detail-label">Date & Time:</span>
+                            <span class="detail-value">${this.formatDateTime(item.created_at)}</span>
                         </div>
-                    ` : ''}
-
-                    <div class="details-section">
-                        <h4 class="section-title">🔍 Technical Info</h4>
-                        <div class="technical-info">
-                            <div class="tech-item">
-                                <span class="tech-label">Entry ID:</span>
-                                <span class="tech-value">${item.id}</span>
-                            </div>
-                            <div class="tech-item">
-                                <span class="tech-label">Processing Time:</span>
-                                <span class="tech-value">${(item.processing_duration || 0).toFixed(2)}s</span>
-                            </div>
-                            <div class="tech-item">
-                                <span class="tech-label">Session ID:</span>
-                                <span class="tech-value">${item.session_id || 'N/A'}</span>
-                            </div>
+                        <div class="detail-item">
+                            <span class="detail-label">Session ID:</span>
+                            <span class="detail-value">${item.session_id || 'N/A'}</span>
                         </div>
+                        <div class="detail-item">
+                            <span class="detail-label">Confidence Score:</span>
+                            <span class="detail-value">${Math.round((item.confidence_score || 0) * 100)}%</span>
+                        </div>
+                        ${item.processing_duration ? `
+                        <div class="detail-item">
+                            <span class="detail-label">Processing Time:</span>
+                            <span class="detail-value">${item.processing_duration.toFixed(2)}s</span>
+                        </div>
+                        ` : ''}
                     </div>
                 </div>
 
-                <div class="details-actions">
-                    <button class="btn secondary" onclick="this.parentElement.parentElement.parentElement.remove()">
-                        Close
-                    </button>
+                <div class="detail-section">
+                    <h4>🎤 Voice Transcription</h4>
+                    <div class="transcript-container">
+                        ${formatTranscript(item.transcript)}
+                    </div>
+                </div>
+
+                ${this.formatActivitySpecificDetails(item)}
+
+                ${item.notes ? `
+                <div class="detail-section">
+                    <h4>📝 Notes</h4>
+                    <p class="notes-text">${item.notes}</p>
+                </div>
+                ` : ''}
+
+                <div class="detail-section">
+                    <h4>🔧 Technical Information</h4>
+                    <div class="detail-grid">
+                        <div class="detail-item">
+                            <span class="detail-label">Entry ID:</span>
+                            <span class="detail-value">#${item.id}</span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">Activity Type:</span>
+                            <span class="detail-value">${item.type}</span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">User ID:</span>
+                            <span class="detail-value">${item.user_id || 'demo_user'}</span>
+                        </div>
+                        ${item.updated_at ? `
+                        <div class="detail-item">
+                            <span class="detail-label">Last Updated:</span>
+                            <span class="detail-value">${this.formatDateTime(item.updated_at)}</span>
+                        </div>
+                        ` : ''}
+                    </div>
                 </div>
             </div>
         `;
-
-        // Add modal to body
-        document.body.appendChild(modal);
-
-        // Add event listener to close on background click
-        modal.addEventListener('click', (e) => {
-            if (e.target === modal) {
-                modal.remove();
-            }
-        });
-
-        // Animate modal in
-        setTimeout(() => {
-            modal.classList.add('show');
-        }, 10);
+        
+        modal.style.display = 'block';
+        document.body.style.overflow = 'hidden';
     }
 
-    getFullActivityDetails(item) {
-        const details = [];
-        let transcript = item.transcript || '';
-        let notes = item.notes || '';
+    getActivityIcon(type) {
+        const icons = {
+            fitness: '🏃',
+            cricket_coaching: '🏏',
+            cricket_matches: '🏆',
+            rest_day: '😴'
+        };
+        return icons[type] || '📝';
+    }
+
+    formatActivityTitle(item) {
+        const titles = {
+            fitness: `${item.fitness_type || 'Fitness'} - ${item.duration_minutes || 0}min`,
+            cricket_coaching: `${item.session_type || 'Cricket'} Practice`,
+            cricket_match: `${item.match_type || 'Match'} Performance`,
+            rest_day: `${item.rest_type || 'Rest'} Day`
+        };
+        return titles[item.type] || 'Activity';
+    }
+
+    formatDateTime(dateString) {
+        const date = new Date(dateString);
+        const now = new Date();
+        const diffTime = Math.abs(now - date);
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        
+        if (diffDays === 1) {
+            return 'Today';
+        } else if (diffDays === 2) {
+            return 'Yesterday';
+        } else if (diffDays <= 7) {
+            return `${diffDays - 1} days ago`;
+        } else {
+            return date.toLocaleDateString('en-US', { 
+                month: 'short', 
+                day: 'numeric',
+                year: date.getFullYear() !== now.getFullYear() ? 'numeric' : undefined
+            });
+        }
+    }
+
+    formatActivitySpecificDetails(item) {
+        let detailsHtml = `<div class="detail-section">
+            <h4>📊 Activity Details</h4>
+            <div class="detail-grid">`;
 
         switch (item.type) {
             case 'fitness':
-                details.push(
-                    { label: 'Fitness Type', value: (item.fitness_type || 'General').replace(/_/g, ' ') },
-                    { label: 'Duration', value: `${item.duration_minutes || 0} minutes` },
-                    { label: 'Intensity', value: item.intensity || 'Not specified' },
-                    { label: 'Energy Level', value: `${item.energy_level || 0}/5` },
-                    { label: 'Mental State', value: item.mental_state || 'Not specified' }
-                );
-                if (item.distance_km) {
-                    details.push({ label: 'Distance', value: `${item.distance_km} km` });
+                if (item.fitness_type) {
+                    detailsHtml += `<div class="detail-item">
+                        <span class="detail-label">Fitness Type:</span>
+                        <span class="detail-value">${item.fitness_type.replace(/_/g, ' ')}</span>
+                    </div>`;
                 }
-                if (item.location) {
-                    details.push({ label: 'Location', value: item.location });
+                if (item.duration_minutes) {
+                    detailsHtml += `<div class="detail-item">
+                        <span class="detail-label">Duration:</span>
+                        <span class="detail-value">${item.duration_minutes} minutes</span>
+                    </div>`;
+                }
+                if (item.intensity) {
+                    detailsHtml += `<div class="detail-item">
+                        <span class="detail-label">Intensity:</span>
+                        <span class="detail-value">${item.intensity}</span>
+                    </div>`;
+                }
+                if (item.energy_level) {
+                    detailsHtml += `<div class="detail-item">
+                        <span class="detail-label">Energy Level:</span>
+                        <span class="detail-value">${item.energy_level}/5</span>
+                    </div>`;
+                }
+                if (item.mental_state) {
+                    detailsHtml += `<div class="detail-item">
+                        <span class="detail-label">Mental State:</span>
+                        <span class="detail-value">${item.mental_state}</span>
+                    </div>`;
                 }
                 break;
 
             case 'cricket_coaching':
-                details.push(
-                    { label: 'Session Type', value: (item.session_type || 'General').replace(/_/g, ' ') },
-                    { label: 'Duration', value: `${item.duration_minutes || 0} minutes` },
-                    { label: 'Skills Practiced', value: item.skills_practiced || 'Not specified' },
-                    { label: 'Focus Level', value: `${item.focus_level || 0}/10` },
-                    { label: 'Confidence Level', value: `${item.confidence_level || 0}/10` },
-                    { label: 'Self Assessment', value: `${item.self_assessment_score || 0}/10` },
-                    { label: 'Difficulty Level', value: `${item.difficulty_level || 0}/10` },
-                    { label: 'Learning Satisfaction', value: `${item.learning_satisfaction || 0}/10` }
-                );
-                if (item.what_went_well) {
-                    notes += (notes ? '\n\n' : '') + `What went well: ${item.what_went_well}`;
+                if (item.session_type) {
+                    detailsHtml += `<div class="detail-item">
+                        <span class="detail-label">Session Type:</span>
+                        <span class="detail-value">${item.session_type.replace(/_/g, ' ')}</span>
+                    </div>`;
                 }
-                if (item.areas_for_improvement) {
-                    notes += (notes ? '\n\n' : '') + `Areas for improvement: ${item.areas_for_improvement}`;
+                if (item.duration_minutes) {
+                    detailsHtml += `<div class="detail-item">
+                        <span class="detail-label">Duration:</span>
+                        <span class="detail-value">${item.duration_minutes} minutes</span>
+                    </div>`;
                 }
-                if (item.coach_feedback) {
-                    notes += (notes ? '\n\n' : '') + `Coach feedback: ${item.coach_feedback}`;
+                if (item.focus_level) {
+                    detailsHtml += `<div class="detail-item">
+                        <span class="detail-label">Focus Level:</span>
+                        <span class="detail-value">${item.focus_level}/10</span>
+                    </div>`;
+                }
+                if (item.confidence_level) {
+                    detailsHtml += `<div class="detail-item">
+                        <span class="detail-label">Confidence:</span>
+                        <span class="detail-value">${item.confidence_level}/10</span>
+                    </div>`;
+                }
+                if (item.self_assessment_score) {
+                    detailsHtml += `<div class="detail-item">
+                        <span class="detail-label">Self Assessment:</span>
+                        <span class="detail-value">${item.self_assessment_score}/10</span>
+                    </div>`;
                 }
                 break;
 
             case 'cricket_matches':
-                details.push(
-                    { label: 'Match Type', value: (item.match_type || 'General').replace(/_/g, ' ') },
-                    { label: 'Opposition Strength', value: `${item.opposition_strength || 0}/10` },
-                    { label: 'Pre-match Nerves', value: `${item.pre_match_nerves || 0}/10` },
-                    { label: 'Post-match Satisfaction', value: `${item.post_match_satisfaction || 0}/10` },
-                    { label: 'Mental State', value: item.mental_state || 'Not specified' }
-                );
-                
-                // Batting stats
-                if (item.runs_scored !== null || item.balls_faced !== null) {
-                    if (item.runs_scored !== null) details.push({ label: 'Runs Scored', value: item.runs_scored });
-                    if (item.balls_faced !== null) details.push({ label: 'Balls Faced', value: item.balls_faced });
-                    if (item.runs_scored && item.balls_faced) {
-                        const strikeRate = ((item.runs_scored / item.balls_faced) * 100).toFixed(1);
-                        details.push({ label: 'Strike Rate', value: `${strikeRate}%` });
-                    }
-                    if (item.boundaries_4s) details.push({ label: 'Boundaries (4s)', value: item.boundaries_4s });
-                    if (item.boundaries_6s) details.push({ label: 'Sixes', value: item.boundaries_6s });
-                    if (item.how_out) details.push({ label: 'How Out', value: item.how_out });
+                if (item.match_type) {
+                    detailsHtml += `<div class="detail-item">
+                        <span class="detail-label">Match Type:</span>
+                        <span class="detail-value">${item.match_type.replace(/_/g, ' ')}</span>
+                    </div>`;
                 }
-                
-                // Fielding stats
-                if (item.catches_taken) details.push({ label: 'Catches Taken', value: item.catches_taken });
-                if (item.catches_dropped) details.push({ label: 'Catches Dropped', value: item.catches_dropped });
-                if (item.stumpings) details.push({ label: 'Stumpings', value: item.stumpings });
-                
-                if (item.key_shots_played) {
-                    notes += (notes ? '\n\n' : '') + `Key shots played: ${item.key_shots_played}`;
+                if (item.runs_scored !== null && item.runs_scored !== undefined) {
+                    detailsHtml += `<div class="detail-item">
+                        <span class="detail-label">Runs Scored:</span>
+                        <span class="detail-value">${item.runs_scored}</span>
+                    </div>`;
+                }
+                if (item.balls_faced !== null && item.balls_faced !== undefined) {
+                    detailsHtml += `<div class="detail-item">
+                        <span class="detail-label">Balls Faced:</span>
+                        <span class="detail-value">${item.balls_faced}</span>
+                    </div>`;
+                }
+                if (item.runs_scored && item.balls_faced) {
+                    const strikeRate = Math.round((item.runs_scored / item.balls_faced) * 100);
+                    detailsHtml += `<div class="detail-item">
+                        <span class="detail-label">Strike Rate:</span>
+                        <span class="detail-value">${strikeRate}%</span>
+                    </div>`;
                 }
                 break;
 
             case 'rest_days':
-                details.push(
-                    { label: 'Rest Type', value: (item.rest_type || 'General').replace(/_/g, ' ') },
-                    { label: 'Energy Level', value: `${item.energy_level || 0}/10` },
-                    { label: 'Fatigue Level', value: `${item.fatigue_level || 0}/10` },
-                    { label: 'Motivation Level', value: `${item.motivation_level || 0}/10` },
-                    { label: 'Mental State', value: item.mental_state || 'Not specified' }
-                );
-                if (item.soreness_level) {
-                    details.push({ label: 'Soreness Level', value: `${item.soreness_level}/10` });
+                if (item.rest_type) {
+                    detailsHtml += `<div class="detail-item">
+                        <span class="detail-label">Rest Type:</span>
+                        <span class="detail-value">${item.rest_type.replace(/_/g, ' ')}</span>
+                    </div>`;
                 }
-                if (item.mood_description) {
-                    notes += (notes ? '\n\n' : '') + `Mood: ${item.mood_description}`;
+                if (item.energy_level) {
+                    detailsHtml += `<div class="detail-item">
+                        <span class="detail-label">Energy Level:</span>
+                        <span class="detail-value">${item.energy_level}/10</span>
+                    </div>`;
                 }
-                if (item.physical_state) {
-                    notes += (notes ? '\n\n' : '') + `Physical state: ${item.physical_state}`;
+                if (item.fatigue_level) {
+                    detailsHtml += `<div class="detail-item">
+                        <span class="detail-label">Fatigue Level:</span>
+                        <span class="detail-value">${item.fatigue_level}/10</span>
+                    </div>`;
                 }
-                if (item.recovery_activities) {
-                    notes += (notes ? '\n\n' : '') + `Recovery activities: ${item.recovery_activities}`;
-                }
-                if (item.training_reflections) {
-                    notes += (notes ? '\n\n' : '') + `Training reflections: ${item.training_reflections}`;
-                }
-                if (item.goals_concerns) {
-                    notes += (notes ? '\n\n' : '') + `Goals/concerns: ${item.goals_concerns}`;
+                if (item.motivation_level) {
+                    detailsHtml += `<div class="detail-item">
+                        <span class="detail-label">Motivation:</span>
+                        <span class="detail-value">${item.motivation_level}/10</span>
+                    </div>`;
                 }
                 break;
         }
 
-        return {
-            details: details.filter(d => d.value !== null && d.value !== undefined && d.value !== 'Not specified'),
-            transcript,
-            notes
-        };
+        detailsHtml += `</div></div>`;
+        return detailsHtml;
     }
 
     getActivityMetrics(item) {
@@ -1324,16 +1485,6 @@ class MobileDashboard {
         });
     }
 
-    formatActivityTitle(item) {
-        const titles = {
-            fitness: `${item.fitness_type || 'Fitness'} - ${item.duration_minutes || 0}min`,
-            cricket_coaching: `${item.session_type || 'Cricket'} Practice`,
-            cricket_match: `${item.match_type || 'Match'} Performance`,
-            rest_day: `${item.rest_type || 'Rest'} Day`
-        };
-        return titles[item.type] || 'Activity';
-    }
-
     formatRelativeTime(timestamp) {
         const now = new Date();
         const diff = now - timestamp;
@@ -1377,6 +1528,14 @@ class MobileDashboard {
     hidePullToRefreshIndicator() {
         // Implementation for hiding pull to refresh
         console.log('↑ Pull to refresh indicator hidden');
+    }
+
+    closeActivityModal() {
+        const modal = document.getElementById('activityModal');
+        if (modal) {
+            modal.style.display = 'none';
+            document.body.style.overflow = 'auto';
+        }
     }
 }
 

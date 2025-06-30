@@ -701,12 +701,25 @@ async def handle_complete_audio_processing(session_id: str) -> None:
                 # Combine all transcripts with turn numbers
                 transcript_parts = []
                 for turn_data in conversation_context.transcript_history:
-                    turn_num = turn_data.get("turn", "N/A")
-                    transcript = turn_data.get("transcript", "")
-                    confidence = turn_data.get("confidence", 0.0)
-                    transcript_parts.append(
-                        f"Turn {turn_num} (conf: {confidence:.2f}): {transcript}"
+                    turn_num = (
+                        turn_data.get("turn")
+                        if isinstance(turn_data, dict)
+                        else getattr(turn_data, "turn", "N/A")
                     )
+                    transcript = (
+                        turn_data.get("transcript")
+                        if isinstance(turn_data, dict)
+                        else getattr(turn_data, "transcript", "")
+                    )
+                    confidence = (
+                        turn_data.get("confidence")
+                        if isinstance(turn_data, dict)
+                        else getattr(turn_data, "confidence", 0.0)
+                    )
+                    if transcript:
+                        transcript_parts.append(
+                            f"Turn {turn_num} (conf: {confidence:.2f}): {transcript}",
+                        )
                 all_transcripts = "\n\n".join(transcript_parts)
             else:
                 # Fallback to final transcript if history not available
@@ -721,6 +734,7 @@ async def handle_complete_audio_processing(session_id: str) -> None:
                 )
                 from fitness_tracking.repositories.fitness_repository import FitnessRepository
 
+                saved_entry = None
                 if entry_type == "fitness":
                     fitness_repo = FitnessRepository(db_session)
                     saved_entry = await fitness_repo.create_from_voice_data(

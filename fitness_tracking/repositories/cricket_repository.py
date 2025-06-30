@@ -125,6 +125,88 @@ class CricketCoachingRepository(
         logger.warning("Unknown session type '%s', defaulting to 'other'", session_type)
         return CricketSessionType.OTHER
 
+    def _normalize_integer_field(
+        self,
+        value: str | int | None,
+        field_name: str,
+        min_val: int = 1,
+        max_val: int = 10,
+        default: int = 5,
+    ) -> int:
+        """Normalize integer fields that might come as strings from LLM."""
+        logger.info(f"🔧 Normalizing {field_name}: {value} (type: {type(value)})")
+
+        if value is None:
+            logger.info(f"🔧 {field_name} is None, returning default: {default}")
+            return default
+
+        if isinstance(value, int):
+            result = max(min_val, min(max_val, value))
+            logger.info(f"🔧 {field_name} is int, returning clamped: {result}")
+            return result
+
+        if isinstance(value, str):
+            value_lower = value.lower().strip()
+            logger.info(f"🔧 {field_name} is string, processing: '{value_lower}'")
+
+            # Try to extract number from string
+            import re
+
+            number_match = re.search(r"\d+", value_lower)
+            if number_match:
+                try:
+                    num = int(number_match.group())
+                    result = max(min_val, min(max_val, num))
+                    logger.info(f"🔧 {field_name} extracted number: {result}")
+                    return result
+                except ValueError:
+                    pass
+
+            # Map descriptive terms to numbers - coaching specific
+            rating_mapping = {
+                "terrible": 1,
+                "awful": 1,
+                "very poor": 1,
+                "poor": 2,
+                "bad": 2,
+                "low": 2,
+                "below average": 3,
+                "not good": 3,
+                "weak": 3,
+                "average": 5,
+                "medium": 5,
+                "okay": 5,
+                "decent": 5,
+                "fine": 5,
+                "good": 6,
+                "well": 6,
+                "nice": 6,
+                "very good": 7,
+                "great": 7,
+                "strong": 7,
+                "excellent": 8,
+                "outstanding": 8,
+                "fantastic": 8,
+                "amazing": 9,
+                "incredible": 9,
+                "superb": 9,
+                "perfect": 10,
+                "flawless": 10,
+                "best": 10,
+            }
+
+            for term, rating in rating_mapping.items():
+                if term in value_lower:
+                    return max(min_val, min(max_val, rating))
+
+        logger.warning(
+            "Could not normalize %s value '%s', using default %d",
+            field_name,
+            value,
+            default,
+        )
+        return default
+
     async def create_from_voice_data(
         self,
         session_id: str,
@@ -143,7 +225,51 @@ class CricketCoachingRepository(
                 data = voice_data
 
             # Normalize session type
-            session_type = self._normalize_session_type(data.get("session_type", "other"))
+            session_type = self._normalize_session_type(data.get("session_type", "team_practice"))
+
+            # Normalize integer fields that might come as strings from LLM
+            duration_minutes = self._normalize_integer_field(
+                data.get("duration_minutes"),
+                "duration_minutes",
+                5,
+                300,
+                60,
+            )
+            self_assessment_score = self._normalize_integer_field(
+                data.get("self_assessment_score"),
+                "self_assessment_score",
+                1,
+                10,
+                6,
+            )
+            confidence_level = self._normalize_integer_field(
+                data.get("confidence_level"),
+                "confidence_level",
+                1,
+                10,
+                6,
+            )
+            focus_level = self._normalize_integer_field(
+                data.get("focus_level"),
+                "focus_level",
+                1,
+                10,
+                6,
+            )
+            learning_satisfaction = self._normalize_integer_field(
+                data.get("learning_satisfaction"),
+                "learning_satisfaction",
+                1,
+                10,
+                6,
+            )
+            difficulty_level = self._normalize_integer_field(
+                data.get("difficulty_level"),
+                "difficulty_level",
+                1,
+                10,
+                5,
+            )
 
             # Create cricket coaching entry
             coaching_entry = CricketCoachingEntry(
@@ -155,16 +281,16 @@ class CricketCoachingRepository(
                 processing_duration=processing_duration,
                 # Cricket coaching data
                 session_type=session_type,
-                duration_minutes=data.get("duration_minutes", 30),
+                duration_minutes=duration_minutes,
                 what_went_well=data.get("what_went_well", ""),
                 areas_for_improvement=data.get("areas_for_improvement", ""),
                 coach_feedback=data.get("coach_feedback"),
-                self_assessment_score=data.get("self_assessment_score", 5),
+                self_assessment_score=self_assessment_score,
                 skills_practiced=data.get("skills_practiced", ""),
-                difficulty_level=data.get("difficulty_level", 5),
-                confidence_level=data.get("confidence_level", 5),
-                focus_level=data.get("focus_level", 5),
-                learning_satisfaction=data.get("learning_satisfaction", 5),
+                difficulty_level=difficulty_level,
+                confidence_level=confidence_level,
+                focus_level=focus_level,
+                learning_satisfaction=learning_satisfaction,
                 mental_state=data.get("mental_state", "good"),
                 notes=data.get("notes"),
             )
@@ -231,54 +357,34 @@ class CricketMatchRepository(
         match_type_mapping = {
             # Practice variations
             "practice": MatchType.PRACTICE,
-            "practice match": MatchType.PRACTICE,
             "friendly": MatchType.PRACTICE,
-            "warm up": MatchType.PRACTICE,
-            "warmup": MatchType.PRACTICE,
-            "trial": MatchType.PRACTICE,
+            "casual": MatchType.PRACTICE,
+            "informal": MatchType.PRACTICE,
+            "nets": MatchType.PRACTICE,
             # Tournament variations
             "tournament": MatchType.TOURNAMENT,
             "competition": MatchType.TOURNAMENT,
-            "championship": MatchType.TOURNAMENT,
-            "cup": MatchType.TOURNAMENT,
-            "final": MatchType.TOURNAMENT,
-            "semi-final": MatchType.TOURNAMENT,
-            "quarter-final": MatchType.TOURNAMENT,
-            "playoff": MatchType.TOURNAMENT,
-            # International/Professional formats (map to tournament)
+            "t20": MatchType.TOURNAMENT,
             "odi": MatchType.TOURNAMENT,
             "one day": MatchType.TOURNAMENT,
-            "one-day": MatchType.TOURNAMENT,
-            "t20": MatchType.TOURNAMENT,
-            "twenty20": MatchType.TOURNAMENT,
             "test": MatchType.TOURNAMENT,
-            "test match": MatchType.TOURNAMENT,
-            "international": MatchType.TOURNAMENT,
-            "domestic": MatchType.TOURNAMENT,
-            "first class": MatchType.TOURNAMENT,
-            "list a": MatchType.TOURNAMENT,
+            "league": MatchType.TOURNAMENT,
+            "championship": MatchType.TOURNAMENT,
             # School variations
             "school": MatchType.SCHOOL,
-            "inter school": MatchType.SCHOOL,
-            "inter-school": MatchType.SCHOOL,
-            "school team": MatchType.SCHOOL,
             "college": MatchType.SCHOOL,
             "university": MatchType.SCHOOL,
+            "inter-school": MatchType.SCHOOL,
             "academic": MatchType.SCHOOL,
             # Club variations
             "club": MatchType.CLUB,
-            "club match": MatchType.CLUB,
             "local": MatchType.CLUB,
             "community": MatchType.CLUB,
-            "recreational": MatchType.CLUB,
-            "league": MatchType.CLUB,
             "district": MatchType.CLUB,
-            "regional": MatchType.CLUB,
-            # Other variations
+            # Other
             "other": MatchType.OTHER,
-            "casual": MatchType.OTHER,
-            "social": MatchType.OTHER,
-            "exhibition": MatchType.OTHER,
+            "misc": MatchType.OTHER,
+            "miscellaneous": MatchType.OTHER,
         }
 
         normalized = match_type_mapping.get(match_type_lower)
@@ -287,15 +393,13 @@ class CricketMatchRepository(
 
         # Try partial matching for compound terms
         if any(
-            keyword in match_type_lower for keyword in ["practice", "friendly", "warm", "trial"]
+            keyword in match_type_lower
+            for keyword in ["friendly", "practice", "casual", "informal", "nets"]
         ):
             return MatchType.PRACTICE
         if any(
             keyword in match_type_lower
-            for keyword in ["tournament", "competition", "cup", "final", "championship"]
-        ) or any(
-            keyword in match_type_lower
-            for keyword in ["odi", "t20", "test", "international", "first class"]
+            for keyword in ["tournament", "competition", "t20", "odi", "test", "league"]
         ):
             return MatchType.TOURNAMENT
         if any(
@@ -313,6 +417,114 @@ class CricketMatchRepository(
         logger.warning("Unknown match type '%s', defaulting to 'other'", match_type)
         return MatchType.OTHER
 
+    def _normalize_integer_field(
+        self,
+        value: str | int | None,
+        field_name: str,
+        min_val: int = 1,
+        max_val: int = 10,
+        default: int = 5,
+    ) -> int:
+        """Normalize integer fields that might come as strings from LLM."""
+        logger.info(f"🔧 Normalizing {field_name}: {value} (type: {type(value)})")
+
+        if value is None:
+            logger.info(f"🔧 {field_name} is None, returning default: {default}")
+            return default
+
+        if isinstance(value, int):
+            result = max(min_val, min(max_val, value))
+            logger.info(f"🔧 {field_name} is int, returning clamped: {result}")
+            return result
+
+        if isinstance(value, str):
+            value_lower = value.lower().strip()
+            logger.info(f"🔧 {field_name} is string, processing: '{value_lower}'")
+
+            # Try to extract number from string
+            import re
+
+            number_match = re.search(r"\d+", value_lower)
+            if number_match:
+                try:
+                    num = int(number_match.group())
+                    result = max(min_val, min(max_val, num))
+                    logger.info(f"🔧 {field_name} extracted number: {result}")
+                    return result
+                except ValueError:
+                    pass
+
+            # Map descriptive terms to numbers based on field type
+            if field_name == "opposition_strength":
+                strength_mapping = {
+                    "very weak": 1,
+                    "weak": 2,
+                    "poor": 2,
+                    "not very strong": 3,
+                    "below average": 3,
+                    "easy": 3,
+                    "average": 5,
+                    "medium": 5,
+                    "okay": 5,
+                    "decent": 5,
+                    "good": 6,
+                    "strong": 7,
+                    "tough": 7,
+                    "very strong": 8,
+                    "excellent": 9,
+                    "outstanding": 10,
+                    "best": 10,
+                    "top": 10,
+                }
+                logger.info(f"🔧 {field_name} checking against strength mapping")
+                for term, rating in strength_mapping.items():
+                    if term in value_lower:
+                        logger.info(f"🔧 {field_name} matched '{term}' -> {rating}")
+                        return rating
+                logger.info(f"🔧 {field_name} no mapping found for '{value_lower}'")
+
+            elif field_name in ["pre_match_nerves", "post_match_satisfaction"]:
+                emotion_mapping = {
+                    "none": 1,
+                    "not at all": 1,
+                    "zero": 1,
+                    "very low": 2,
+                    "low": 3,
+                    "little": 3,
+                    "some": 4,
+                    "medium": 5,
+                    "average": 5,
+                    "okay": 5,
+                    "high": 7,
+                    "very high": 8,
+                    "extremely": 9,
+                    "maximum": 10,
+                    "not very satisfied": 3,
+                    "not satisfied": 2,
+                    "disappointed": 2,
+                    "satisfied": 6,
+                    "very satisfied": 8,
+                    "extremely satisfied": 9,
+                    "confident": 7,
+                    "very confident": 8,
+                    "nervous": 3,
+                    "very nervous": 2,
+                }
+                logger.info(f"🔧 {field_name} checking against emotion mapping")
+                for term, rating in emotion_mapping.items():
+                    if term in value_lower:
+                        logger.info(f"🔧 {field_name} matched '{term}' -> {rating}")
+                        return rating
+                logger.info(f"🔧 {field_name} no emotion mapping found for '{value_lower}'")
+
+        logger.warning(
+            "Could not normalize %s value '%s', using default %d",
+            field_name,
+            value,
+            default,
+        )
+        return default
+
     async def create_from_voice_data(
         self,
         session_id: str,
@@ -324,14 +536,62 @@ class CricketMatchRepository(
     ) -> CricketMatchEntry:
         """Create cricket match entry from voice processing data."""
         try:
+            logger.info(f"🏏 Received voice_data type: {type(voice_data)}")
+            logger.info(f"🏏 Raw voice_data: {voice_data}")
+
             # Handle both Pydantic model and dict input
             if isinstance(voice_data, CricketMatchDataExtraction):
                 data = voice_data.model_dump()
+                logger.info(f"🏏 Converted Pydantic model to dict: {data}")
             else:
                 data = voice_data
+                logger.info(f"🏏 Using dict directly: {data}")
 
             # Normalize match type
-            match_type = self._normalize_match_type(data.get("match_type", "school"))
+            raw_match_type = data.get("match_type", "school")
+            logger.info(f"🏏 Raw match_type: {raw_match_type} (type: {type(raw_match_type)})")
+            match_type = self._normalize_match_type(raw_match_type)
+            logger.info(f"🏏 Normalized match_type: {match_type}")
+
+            # Normalize integer fields that might come as strings from LLM
+            raw_opposition_strength = data.get("opposition_strength")
+            logger.info(
+                f"🏏 Raw opposition_strength: {raw_opposition_strength} (type: {type(raw_opposition_strength)})",
+            )
+            opposition_strength = self._normalize_integer_field(
+                raw_opposition_strength,
+                "opposition_strength",
+                1,
+                10,
+                5,
+            )
+            logger.info(f"🏏 Normalized opposition_strength: {opposition_strength}")
+
+            raw_pre_match_nerves = data.get("pre_match_nerves")
+            logger.info(
+                f"🏏 Raw pre_match_nerves: {raw_pre_match_nerves} (type: {type(raw_pre_match_nerves)})",
+            )
+            pre_match_nerves = self._normalize_integer_field(
+                raw_pre_match_nerves,
+                "pre_match_nerves",
+                1,
+                10,
+                5,
+            )
+            logger.info(f"🏏 Normalized pre_match_nerves: {pre_match_nerves}")
+
+            raw_post_match_satisfaction = data.get("post_match_satisfaction")
+            logger.info(
+                f"🏏 Raw post_match_satisfaction: {raw_post_match_satisfaction} (type: {type(raw_post_match_satisfaction)})",
+            )
+            post_match_satisfaction = self._normalize_integer_field(
+                raw_post_match_satisfaction,
+                "post_match_satisfaction",
+                1,
+                10,
+                5,
+            )
+            logger.info(f"🏏 Normalized post_match_satisfaction: {post_match_satisfaction}")
 
             # Create cricket match entry
             match_entry = CricketMatchEntry(
@@ -343,9 +603,9 @@ class CricketMatchRepository(
                 processing_duration=processing_duration,
                 # Cricket match data
                 match_type=match_type,
-                opposition_strength=data.get("opposition_strength", 5),
-                pre_match_nerves=data.get("pre_match_nerves", 5),
-                post_match_satisfaction=data.get("post_match_satisfaction", 5),
+                opposition_strength=opposition_strength,
+                pre_match_nerves=pre_match_nerves,
+                post_match_satisfaction=post_match_satisfaction,
                 mental_state=data.get("mental_state", "good"),
                 # Batting stats
                 runs_scored=data.get("runs_scored"),
@@ -359,6 +619,10 @@ class CricketMatchRepository(
                 catches_dropped=data.get("catches_dropped"),
                 stumpings=data.get("stumpings"),
                 notes=data.get("notes"),
+            )
+
+            logger.info(
+                f"🏏 Final match_entry object created with opposition_strength: {match_entry.opposition_strength}",
             )
 
             self.session.add(match_entry)
@@ -474,6 +738,90 @@ class RestDayRepository(
         logger.warning("Unknown rest type '%s', defaulting to 'complete_rest'", rest_type)
         return RestType.COMPLETE_REST
 
+    def _normalize_integer_field(
+        self,
+        value: str | int | None,
+        field_name: str,
+        min_val: int = 1,
+        max_val: int = 10,
+        default: int = 5,
+    ) -> int:
+        """Normalize integer fields that might come as strings from LLM."""
+        logger.info(f"🔧 Normalizing {field_name}: {value} (type: {type(value)})")
+
+        if value is None:
+            logger.info(f"🔧 {field_name} is None, returning default: {default}")
+            return default
+
+        if isinstance(value, int):
+            result = max(min_val, min(max_val, value))
+            logger.info(f"🔧 {field_name} is int, returning clamped: {result}")
+            return result
+
+        if isinstance(value, str):
+            value_lower = value.lower().strip()
+            logger.info(f"🔧 {field_name} is string, processing: '{value_lower}'")
+
+            # Try to extract number from string
+            import re
+
+            number_match = re.search(r"\d+", value_lower)
+            if number_match:
+                try:
+                    num = int(number_match.group())
+                    result = max(min_val, min(max_val, num))
+                    logger.info(f"🔧 {field_name} extracted number: {result}")
+                    return result
+                except ValueError:
+                    pass
+
+            # Map descriptive terms to numbers - rest day specific
+            level_mapping = {
+                "none": 1,
+                "zero": 1,
+                "not at all": 1,
+                "very low": 2,
+                "minimal": 2,
+                "barely": 2,
+                "low": 3,
+                "little": 3,
+                "slight": 3,
+                "moderate": 4,
+                "some": 4,
+                "a bit": 4,
+                "medium": 5,
+                "average": 5,
+                "okay": 5,
+                "normal": 5,
+                "high": 6,
+                "quite": 6,
+                "fairly": 6,
+                "very high": 7,
+                "strong": 7,
+                "significant": 7,
+                "extremely high": 8,
+                "intense": 8,
+                "severe": 8,
+                "maximum": 9,
+                "overwhelming": 9,
+                "unbearable": 9,
+                "complete": 10,
+                "total": 10,
+                "absolute": 10,
+            }
+
+            for term, rating in level_mapping.items():
+                if term in value_lower:
+                    return max(min_val, min(max_val, rating))
+
+        logger.warning(
+            "Could not normalize %s value '%s', using default %d",
+            field_name,
+            value,
+            default,
+        )
+        return default
+
     async def create_from_voice_data(
         self,
         session_id: str,
@@ -494,6 +842,40 @@ class RestDayRepository(
             # Normalize rest type
             rest_type = self._normalize_rest_type(data.get("rest_type", "complete_rest"))
 
+            # Normalize integer fields that might come as strings from LLM
+            fatigue_level = self._normalize_integer_field(
+                data.get("fatigue_level"),
+                "fatigue_level",
+                1,
+                10,
+                5,
+            )
+            energy_level = self._normalize_integer_field(
+                data.get("energy_level"),
+                "energy_level",
+                1,
+                10,
+                5,
+            )
+            motivation_level = self._normalize_integer_field(
+                data.get("motivation_level"),
+                "motivation_level",
+                1,
+                10,
+                5,
+            )
+            soreness_level = (
+                self._normalize_integer_field(
+                    data.get("soreness_level"),
+                    "soreness_level",
+                    1,
+                    10,
+                    3,
+                )
+                if data.get("soreness_level") is not None
+                else None
+            )
+
             # Create rest day entry
             rest_entry = RestDayEntry(
                 session_id=session_id,
@@ -505,12 +887,12 @@ class RestDayRepository(
                 # Rest day data
                 rest_type=rest_type,
                 physical_state=data.get("physical_state", ""),
-                fatigue_level=data.get("fatigue_level", 5),
-                energy_level=data.get("energy_level", 5),
-                motivation_level=data.get("motivation_level", 5),
+                fatigue_level=fatigue_level,
+                energy_level=energy_level,
+                motivation_level=motivation_level,
                 mood_description=data.get("mood_description", ""),
                 mental_state=data.get("mental_state", "good"),
-                soreness_level=data.get("soreness_level"),
+                soreness_level=soreness_level,
                 training_reflections=data.get("training_reflections"),
                 goals_concerns=data.get("goals_concerns"),
                 recovery_activities=data.get("recovery_activities"),
