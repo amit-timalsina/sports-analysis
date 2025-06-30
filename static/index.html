@@ -138,26 +138,31 @@
             <section class="card">
                 <h2>📊 Performance Analytics</h2>
                 <p style="color: var(--text-secondary); margin-bottom: var(--spacing-lg);">
-                    Get insights into your cricket and fitness progress
+                    Visualize your cricket and fitness progress with interactive charts
                 </p>
                 
-                <div class="api-section">
-                    <div>
-                        <h3 style="margin-bottom: 12px; color: var(--primary-color);">Fitness Analytics</h3>
-                        <button class="btn" onclick="loadFitnessAnalytics()">📈 Load Fitness Analytics</button>
-                        <div id="fitness-analytics-response" class="response-area hidden"></div>
-                    </div>
-                    <div style="margin-top: var(--spacing-lg);">
-                        <h3 style="margin-bottom: 12px; color: var(--primary-color);">Cricket Analytics</h3>
-                        <button class="btn" onclick="loadCricketAnalytics()">🏏 Load Cricket Analytics</button>
-                        <div id="cricket-analytics-response" class="response-area hidden"></div>
-                    </div>
+                <!-- Analytics Type Selector -->
+                <div style="display: flex; gap: var(--spacing-sm); margin-bottom: var(--spacing-lg); flex-wrap: wrap;">
+                    <button class="btn" onclick="loadFitnessCharts()" style="flex: 1; min-width: 120px;">
+                        🏃 Fitness Charts
+                    </button>
+                    <button class="btn" onclick="loadCricketCharts()" style="flex: 1; min-width: 120px;">
+                        🏏 Cricket Charts
+                    </button>
+                    <button class="btn" onclick="loadCombinedCharts()" style="flex: 1; min-width: 120px;">
+                        🔄 Combined View
+                    </button>
                 </div>
-                <div style="margin-top: var(--spacing-lg);">
-                    <h3 style="margin-bottom: 12px; color: var(--primary-color);">Combined Analytics</h3>
-                    <button class="btn" onclick="loadCombinedAnalytics()">🔄 Load Combined Analytics</button>
-                    <div id="combined-analytics-response" class="response-area hidden"></div>
+                
+                <!-- Loading Indicator for Charts -->
+                <div id="charts-loading" class="hidden" style="text-align: center; padding: var(--spacing-xl);">
+                    <div class="loading"></div>
+                    <p style="margin-top: var(--spacing-md); color: var(--text-secondary);">
+                        Loading analytics charts...
+                    </p>
                 </div>
+                
+                <!-- Charts will be dynamically inserted here -->
             </section>
         </div>
 
@@ -247,8 +252,12 @@
         </div>
     </div>
 
+    <!-- Chart.js for Analytics -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.js"></script>
+    
     <!-- Scripts -->
     <script src="/static/js/dashboard.js"></script>
+    <script src="/static/js/charts.js"></script>
     <script>
         // Global variables for voice interface integration
         let currentEntryType = 'fitness';
@@ -473,57 +482,82 @@
             }
         }
 
-        // Analytics functions
-        async function apiRequest(endpoint) {
-            try {
-                const response = await fetch(endpoint);
-                const data = await response.json();
-                return JSON.stringify(data, null, 2);
-            } catch (error) {
-                return `Error: ${error.message}`;
+        // Analytics Chart Functions
+        function showChartsLoading() {
+            const loadingEl = document.getElementById('charts-loading');
+            if (loadingEl) {
+                loadingEl.classList.remove('hidden');
+            }
+        }
+        
+        function hideChartsLoading() {
+            const loadingEl = document.getElementById('charts-loading');
+            if (loadingEl) {
+                loadingEl.classList.add('hidden');
             }
         }
 
-        async function loadFitnessAnalytics() {
+        async function loadFitnessCharts() {
             const btn = event.target;
-            const responseEl = document.getElementById('fitness-analytics-response');
+            const originalText = btn.innerHTML;
             
             btn.innerHTML = '<span class="loading"></span> Loading...';
             btn.disabled = true;
+            showChartsLoading();
             
-            responseEl.classList.remove('hidden');
-            responseEl.textContent = await apiRequest('/api/analytics/fitness');
-            
-            btn.innerHTML = '📈 Load Fitness Analytics';
-            btn.disabled = false;
+            try {
+                if (window.analyticsCharts) {
+                    await window.analyticsCharts.renderFitnessAnalytics();
+                }
+            } catch (error) {
+                console.error('Failed to load fitness charts:', error);
+            } finally {
+                hideChartsLoading();
+                btn.innerHTML = originalText;
+                btn.disabled = false;
+            }
         }
 
-        async function loadCricketAnalytics() {
+        async function loadCricketCharts() {
             const btn = event.target;
-            const responseEl = document.getElementById('cricket-analytics-response');
+            const originalText = btn.innerHTML;
             
             btn.innerHTML = '<span class="loading"></span> Loading...';
             btn.disabled = true;
+            showChartsLoading();
             
-            responseEl.classList.remove('hidden');
-            responseEl.textContent = await apiRequest('/api/analytics/cricket');
-            
-            btn.innerHTML = '🏏 Load Cricket Analytics';
-            btn.disabled = false;
+            try {
+                if (window.analyticsCharts) {
+                    await window.analyticsCharts.renderCricketAnalytics();
+                }
+            } catch (error) {
+                console.error('Failed to load cricket charts:', error);
+            } finally {
+                hideChartsLoading();
+                btn.innerHTML = originalText;
+                btn.disabled = false;
+            }
         }
 
-        async function loadCombinedAnalytics() {
+        async function loadCombinedCharts() {
             const btn = event.target;
-            const responseEl = document.getElementById('combined-analytics-response');
+            const originalText = btn.innerHTML;
             
             btn.innerHTML = '<span class="loading"></span> Loading...';
             btn.disabled = true;
+            showChartsLoading();
             
-            responseEl.classList.remove('hidden');
-            responseEl.textContent = await apiRequest('/api/analytics/combined');
-            
-            btn.innerHTML = '🔄 Load Combined Analytics';
-            btn.disabled = false;
+            try {
+                if (window.analyticsCharts) {
+                    await window.analyticsCharts.renderCombinedAnalytics();
+                }
+            } catch (error) {
+                console.error('Failed to load combined charts:', error);
+            } finally {
+                hideChartsLoading();
+                btn.innerHTML = originalText;
+                btn.disabled = false;
+            }
         }
 
         async function loadFitnessEntries() {
@@ -573,6 +607,29 @@
             if (activeTab && activeContent) {
                 activeTab.classList.add('active');
                 activeContent.classList.remove('hidden');
+                
+                // Auto-load charts when analytics tab is opened
+                if (tabName === 'analytics') {
+                    setTimeout(() => {
+                        if (window.analyticsCharts && !activeContent.querySelector('.chart-container')) {
+                            loadFitnessChartsAuto();
+                        }
+                    }, 300);
+                }
+            }
+        }
+        
+        // Auto-load fitness charts when analytics tab opens
+        async function loadFitnessChartsAuto() {
+            showChartsLoading();
+            try {
+                if (window.analyticsCharts) {
+                    await window.analyticsCharts.renderFitnessAnalytics();
+                }
+            } catch (error) {
+                console.error('Failed to auto-load fitness charts:', error);
+            } finally {
+                hideChartsLoading();
             }
         }
 
