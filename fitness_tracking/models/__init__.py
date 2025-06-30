@@ -1,0 +1,1 @@
+"""Fitness tracking database models."""

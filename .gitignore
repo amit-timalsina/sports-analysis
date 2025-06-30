@@ -1,0 +1,8 @@
+__pycache__/
+coverage/
+.coverage
+coverage.xml
+.env
+*.log
+audio_storage/
+.vscode/

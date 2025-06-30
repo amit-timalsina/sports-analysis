@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cricket Fitness Tracker - Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .btn {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 10px 5px;
+            font-size: 16px;
+        }
+        
+        .btn:hover {
+            background: #0056b3;
+        }
+        
+        .btn.recording {
+            background: #dc3545;
+            animation: pulse 1s infinite;
+        }
+        
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+            100% { transform: scale(1); }
+        }
+        
+        .status {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 5px;
+            padding: 15px;
+            margin: 10px 0;
+            font-family: monospace;
+            white-space: pre-wrap;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        
+        .success {
+            color: #155724;
+            background: #d4edda;
+            border-color: #c3e6cb;
+        }
+        
+        .error {
+            color: #721c24;
+            background: #f8d7da;
+            border-color: #f5c6cb;
+        }
+        
+        .info {
+            color: #0c5460;
+            background: #d1ecf1;
+            border-color: #bee5eb;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🏏 Cricket Fitness Tracker - Test</h1>
+        
+        <div class="section">
+            <h3>Step 1: Test Session Creation</h3>
+            <button class="btn" onclick="testSessionCreation()">Create Session</button>
+            <div id="session-status" class="status"></div>
+        </div>
+        
+        <div class="section">
+            <h3>Step 2: Test WebSocket Connection</h3>
+            <button class="btn" onclick="testWebSocketConnection()">Connect WebSocket</button>
+            <button class="btn" onclick="disconnectWebSocket()">Disconnect</button>
+            <div id="websocket-status" class="status"></div>
+        </div>
+        
+        <div class="section">
+            <h3>Step 3: Test Audio Recording</h3>
+            <button class="btn" id="record-btn" onclick="toggleRecording()">🎤 Start Recording</button>
+            <div id="audio-status" class="status"></div>
+        </div>
+        
+        <div class="section">
+            <h3>Step 4: Test Full Flow</h3>
+            <button class="btn" onclick="testFullFlow()">Test Complete Flow</button>
+            <div id="full-flow-status" class="status"></div>
+        </div>
+    </div>
+
+    <script>
+        let currentSessionId = null;
+        let websocket = null;
+        let mediaRecorder = null;
+        let audioChunks = [];
+        let isRecording = false;
+
+        // Utility functions
+        function log(elementId, message, type = 'info') {
+            const element = document.getElementById(elementId);
+            const timestamp = new Date().toLocaleTimeString();
+            const logMessage = `[${timestamp}] ${message}\n`;
+            
+            element.textContent += logMessage;
+            element.className = `status ${type}`;
+            element.scrollTop = element.scrollHeight;
+            
+            console.log(message);
+        }
+
+        function clearLog(elementId) {
+            document.getElementById(elementId).textContent = '';
+        }
+
+        // Step 1: Test Session Creation
+        async function testSessionCreation() {
+            clearLog('session-status');
+            log('session-status', 'Testing session creation...');
+            
+            try {
+                const response = await fetch('/api/sessions', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+                const data = await response.json();
+                log('session-status', `✅ Session created successfully!`, 'success');
+                log('session-status', `Session ID: ${data.data.session_id}`);
+                log('session-status', `WebSocket URL: ${data.data.websocket_url}`);
+                
+                currentSessionId = data.data.session_id;
+                
+            } catch (error) {
+                log('session-status', `❌ Session creation failed: ${error.message}`, 'error');
+            }
+        }
+
+        // Step 2: Test WebSocket Connection
+        function testWebSocketConnection() {
+            if (!currentSessionId) {
+                log('websocket-status', '❌ No session ID available. Create a session first.', 'error');
+                return;
+            }
+            
+            clearLog('websocket-status');
+            log('websocket-status', 'Testing WebSocket connection...');
+            
+            try {
+                const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+                const wsUrl = `${protocol}//${location.host}/ws/voice/${currentSessionId}`;
+                
+                log('websocket-status', `Connecting to: ${wsUrl}`);
+                
+                websocket = new WebSocket(wsUrl);
+                
+                websocket.onopen = function(event) {
+                    log('websocket-status', '✅ WebSocket connected successfully!', 'success');
+                };
+                
+                websocket.onmessage = function(event) {
+                    log('websocket-status', `📥 Received: ${event.data}`);
+                };
+                
+                websocket.onerror = function(error) {
+                    log('websocket-status', `❌ WebSocket error: ${error}`, 'error');
+                };
+                
+                websocket.onclose = function(event) {
+                    log('websocket-status', `🔌 WebSocket closed: Code ${event.code}, Reason: ${event.reason}`);
+                };
+                
+            } catch (error) {
+                log('websocket-status', `❌ WebSocket connection failed: ${error.message}`, 'error');
+            }
+        }
+
+        function disconnectWebSocket() {
+            if (websocket) {
+                websocket.close();
+                websocket = null;
+                log('websocket-status', '🔌 WebSocket disconnected');
+            }
+        }
+
+        // Step 3: Test Audio Recording
+        async function toggleRecording() {
+            if (isRecording) {
+                stopRecording();
+            } else {
+                await startRecording();
+            }
+        }
+
+        async function startRecording() {
+            clearLog('audio-status');
+            log('audio-status', 'Testing audio recording...');
+            
+            try {
+                log('audio-status', 'Requesting microphone access...');
+                
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    audio: {
+                        echoCancellation: true,
+                        noiseSuppression: true,
+                        autoGainControl: true,
+                        sampleRate: 16000
+                    }
+                });
+                
+                log('audio-status', '✅ Microphone access granted', 'success');
+                
+                mediaRecorder = new MediaRecorder(stream, {
+                    mimeType: 'audio/webm;codecs=opus'
+                });
+                
+                audioChunks = [];
+                
+                mediaRecorder.ondataavailable = function(event) {
+                    if (event.data.size > 0) {
+                        audioChunks.push(event.data);
+                        log('audio-status', `📊 Audio data: ${event.data.size} bytes`);
+                    }
+                };
+                
+                mediaRecorder.onstop = function() {
+                    const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+                    log('audio-status', `✅ Recording stopped. Audio blob: ${audioBlob.size} bytes`, 'success');
+                    
+                    // Stop all tracks
+                    stream.getTracks().forEach(track => track.stop());
+                };
+                
+                mediaRecorder.onerror = function(event) {
+                    log('audio-status', `❌ MediaRecorder error: ${event.error}`, 'error');
+                };
+                
+                mediaRecorder.start(1000); // Record in 1-second chunks
+                isRecording = true;
+                
+                const recordBtn = document.getElementById('record-btn');
+                recordBtn.textContent = '⏹️ Stop Recording';
+                recordBtn.classList.add('recording');
+                
+                log('audio-status', '🎤 Recording started...');
+                
+                // Auto-stop after 5 seconds for testing
+                setTimeout(() => {
+                    if (isRecording) {
+                        log('audio-status', 'Auto-stopping recording after 5 seconds...');
+                        stopRecording();
+                    }
+                }, 5000);
+                
+            } catch (error) {
+                log('audio-status', `❌ Audio recording failed: ${error.message}`, 'error');
+                
+                if (error.name === 'NotAllowedError') {
+                    log('audio-status', 'Microphone access denied. Please enable microphone permissions.', 'error');
+                } else if (error.name === 'NotFoundError') {
+                    log('audio-status', 'No microphone found. Please connect a microphone.', 'error');
+                }
+            }
+        }
+
+        function stopRecording() {
+            if (mediaRecorder && mediaRecorder.state === 'recording') {
+                mediaRecorder.stop();
+                isRecording = false;
+                
+                const recordBtn = document.getElementById('record-btn');
+                recordBtn.textContent = '🎤 Start Recording';
+                recordBtn.classList.remove('recording');
+                
+                log('audio-status', '⏹️ Recording stopped');
+            }
+        }
+
+        // Step 4: Test Full Flow
+        async function testFullFlow() {
+            clearLog('full-flow-status');
+            log('full-flow-status', 'Testing complete flow...');
+            
+            try {
+                // 1. Create session
+                log('full-flow-status', '1. Creating session...');
+                await testSessionCreation();
+                
+                if (!currentSessionId) {
+                    throw new Error('Failed to create session');
+                }
+                
+                // 2. Connect WebSocket
+                log('full-flow-status', '2. Connecting WebSocket...');
+                testWebSocketConnection();
+                
+                // Wait for WebSocket to connect
+                await new Promise((resolve, reject) => {
+                    if (websocket.readyState === WebSocket.OPEN) {
+                        resolve();
+                    } else {
+                        websocket.onopen = resolve;
+                        websocket.onerror = reject;
+                        setTimeout(() => reject(new Error('WebSocket connection timeout')), 5000);
+                    }
+                });
+                
+                log('full-flow-status', '3. Starting audio recording...');
+                await startRecording();
+                
+                // Wait for recording to complete
+                await new Promise(resolve => setTimeout(resolve, 6000));
+                
+                log('full-flow-status', '✅ Full flow test completed!', 'success');
+                
+            } catch (error) {
+                log('full-flow-status', `❌ Full flow test failed: ${error.message}`, 'error');
+            }
+        }
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', function() {
+            log('session-status', 'Test page loaded. Click "Create Session" to start.');
+            log('websocket-status', 'Ready to test WebSocket connection.');
+            log('audio-status', 'Ready to test audio recording.');
+            log('full-flow-status', 'Ready to test complete flow.');
+        });
+    </script>
+</body>
+</html> 

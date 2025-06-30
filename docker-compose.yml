@@ -1,0 +1,70 @@
+name: cricket-fitness-tracker
+
+services:
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: cricket_fitness
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "8432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d cricket_fitness"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - cricket-network
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: cricket-fitness-tracker
+    volumes:
+      - ./audio_storage:/app/audio_storage
+      - ./static:/app/static
+    ports:
+      - "8020:8000"
+    environment:
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_NAME=cricket_fitness
+      - DB_USERNAME=postgres
+      - DB_PASSWORD=postgres
+      - DB_DRIVER=postgresql+asyncpg
+      - ENVIRONMENT=development
+      - DEBUG=true
+      - LOG_LEVEL=INFO
+      - AUDIO_STORAGE_PATH=/app/audio_storage
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+    env_file:
+      - .env
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - cricket-network
+    restart: unless-stopped
+
+  # nlm-ingestor:
+  #   image: ghcr.io/nlmatics/nlm-ingestor:latest
+  #   ports:
+  #     - "5010:5001"
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  cricket-network:
+    driver: bridge 

@@ -1,0 +1,1285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🏏 Cricket Fitness Tracker</title>
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <script src="https://unpkg.com/htmx.org@1.9.10/dist/ext/ws.js"></script>
+    <style>
+        /* CSS Variables for Theming */
+        :root {
+            --primary-green: #22c55e;
+            --primary-blue: #3b82f6;
+            --secondary-orange: #f97316;
+            --neutral-gray: #6b7280;
+            --light-gray: #f3f4f6;
+            --dark-gray: #1f2937;
+            --white: #ffffff;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --error: #ef4444;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            color: var(--dark-gray);
+            overflow-x: hidden;
+        }
+
+        .container {
+            max-width: 400px;
+            margin: 0 auto;
+            background: var(--white);
+            min-height: 100vh;
+            position: relative;
+            box-shadow: 0 0 20px rgba(0, 0, 0, 0.1);
+        }
+
+        /* Header */
+        .header {
+            background: linear-gradient(135deg, var(--primary-green), var(--primary-blue));
+            color: var(--white);
+            padding: 1rem;
+            text-align: center;
+            position: relative;
+        }
+
+        .header h1 {
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+        }
+
+        .header .date {
+            font-size: 0.9rem;
+            opacity: 0.9;
+        }
+
+        .menu-btn, .settings-btn {
+            position: absolute;
+            top: 1rem;
+            background: none;
+            border: none;
+            color: var(--white);
+            font-size: 1.5rem;
+            cursor: pointer;
+            padding: 0.5rem;
+            border-radius: 50%;
+            transition: background-color 0.3s;
+        }
+
+        .menu-btn {
+            left: 1rem;
+        }
+
+        .settings-btn {
+            right: 1rem;
+        }
+
+        .menu-btn:hover, .settings-btn:hover {
+            background-color: rgba(255, 255, 255, 0.2);
+        }
+
+        /* Main Dashboard */
+        .dashboard {
+            padding: 1.5rem;
+        }
+
+        .greeting {
+            margin-bottom: 2rem;
+        }
+
+        .greeting h2 {
+            font-size: 1.3rem;
+            color: var(--dark-gray);
+            margin-bottom: 0.5rem;
+        }
+
+        .section-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: var(--dark-gray);
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        /* Activity Cards Grid */
+        .activity-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+
+        .activity-card {
+            background: var(--white);
+            border: 2px solid var(--light-gray);
+            border-radius: 12px;
+            padding: 1.5rem;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+            position: relative;
+            min-height: 120px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        .activity-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+        }
+
+        .activity-card.fitness {
+            border-color: var(--primary-green);
+            background: linear-gradient(135deg, rgba(34, 197, 94, 0.1), rgba(34, 197, 94, 0.05));
+        }
+
+        .activity-card.cricket {
+            border-color: var(--primary-blue);
+            background: linear-gradient(135deg, rgba(59, 130, 246, 0.1), rgba(59, 130, 246, 0.05));
+        }
+
+        .activity-card.rest {
+            border-color: var(--secondary-orange);
+            background: linear-gradient(135deg, rgba(249, 115, 22, 0.1), rgba(249, 115, 22, 0.05));
+        }
+
+        .activity-card.match {
+            border-color: var(--warning);
+            background: linear-gradient(135deg, rgba(245, 158, 11, 0.1), rgba(245, 158, 11, 0.05));
+        }
+
+        .activity-icon {
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .activity-title {
+            font-weight: 600;
+            font-size: 0.9rem;
+            margin-bottom: 0.25rem;
+        }
+
+        .activity-status {
+            font-size: 0.8rem;
+            color: var(--neutral-gray);
+        }
+
+        .activity-status.logged {
+            color: var(--success);
+            font-weight: 500;
+        }
+
+        /* Quick Stats */
+        .quick-stats {
+            background: var(--light-gray);
+            border-radius: 12px;
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .quick-stats h3 {
+            font-size: 1rem;
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .stats-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 0.5rem;
+        }
+
+        .progress-bar {
+            display: flex;
+            gap: 2px;
+            align-items: center;
+        }
+
+        .progress-block {
+            width: 20px;
+            height: 8px;
+            border-radius: 4px;
+            background: var(--light-gray);
+        }
+
+        .progress-block.filled {
+            background: var(--primary-green);
+        }
+
+        /* Action Buttons */
+        .action-buttons {
+            display: flex;
+            gap: 1rem;
+        }
+
+        .btn {
+            flex: 1;
+            padding: 0.75rem 1.5rem;
+            border: none;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            text-decoration: none;
+            text-align: center;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+        }
+
+        .btn-primary {
+            background: var(--primary-blue);
+            color: var(--white);
+        }
+
+        .btn-secondary {
+            background: var(--primary-green);
+            color: var(--white);
+        }
+
+        .btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        }
+
+        /* Voice Recording Interface */
+        .voice-interface {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: var(--white);
+            z-index: 1000;
+            max-width: 400px;
+            margin: 0 auto;
+        }
+
+        .voice-interface.active {
+            display: block;
+        }
+
+        .voice-header {
+            background: var(--primary-green);
+            color: var(--white);
+            padding: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .back-btn {
+            background: none;
+            border: none;
+            color: var(--white);
+            font-size: 1.5rem;
+            cursor: pointer;
+        }
+
+        .voice-content {
+            padding: 2rem;
+            text-align: center;
+        }
+
+        .listening-indicator {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .question-bubble {
+            background: var(--light-gray);
+            border-radius: 12px;
+            padding: 1rem;
+            margin-bottom: 2rem;
+            font-style: italic;
+        }
+
+        .recording-area {
+            background: var(--light-gray);
+            border-radius: 12px;
+            padding: 2rem;
+            margin-bottom: 2rem;
+            position: relative;
+        }
+
+        .record-btn {
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            background: var(--error);
+            color: var(--white);
+            border: none;
+            font-size: 1.5rem;
+            cursor: pointer;
+            margin-bottom: 1rem;
+            transition: all 0.3s;
+        }
+
+        .record-btn:hover {
+            transform: scale(1.1);
+        }
+
+        .record-btn.recording {
+            animation: recording-pulse 1s infinite;
+        }
+
+        @keyframes recording-pulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+        }
+
+        .waveform {
+            height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 2px;
+        }
+
+        .wave-bar {
+            width: 3px;
+            background: var(--primary-blue);
+            border-radius: 2px;
+            animation: wave 1s infinite ease-in-out;
+        }
+
+        @keyframes wave {
+            0%, 100% { height: 10px; }
+            50% { height: 30px; }
+        }
+
+        .transcript-area {
+            background: var(--white);
+            border: 2px solid var(--light-gray);
+            border-radius: 8px;
+            padding: 1rem;
+            margin-bottom: 1rem;
+            min-height: 80px;
+            text-align: left;
+        }
+
+        .transcript-label {
+            font-weight: 600;
+            color: var(--neutral-gray);
+            font-size: 0.9rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .progress-indicator {
+            display: flex;
+            justify-content: center;
+            gap: 0.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .progress-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: var(--light-gray);
+        }
+
+        .progress-dot.active {
+            background: var(--primary-blue);
+        }
+
+        .progress-dot.completed {
+            background: var(--success);
+        }
+
+        /* Data Confirmation Screen */
+        .confirmation-screen {
+            display: none;
+            padding: 1.5rem;
+        }
+
+        .confirmation-screen.active {
+            display: block;
+        }
+
+        .summary-card {
+            background: var(--white);
+            border: 2px solid var(--light-gray);
+            border-radius: 12px;
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .summary-header {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin-bottom: 1rem;
+            font-weight: 600;
+            color: var(--dark-gray);
+        }
+
+        .summary-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.5rem 0;
+            border-bottom: 1px solid var(--light-gray);
+        }
+
+        .summary-item:last-child {
+            border-bottom: none;
+        }
+
+        .summary-label {
+            font-weight: 500;
+        }
+
+        .summary-value {
+            color: var(--neutral-gray);
+        }
+
+        .star-rating {
+            color: var(--warning);
+        }
+
+        /* Loading States */
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 2rem;
+        }
+
+        .loading.active {
+            display: block;
+        }
+
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid var(--light-gray);
+            border-top: 4px solid var(--primary-blue);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 1rem;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* Error States */
+        .error-message {
+            background: var(--error);
+            color: var(--white);
+            padding: 1rem;
+            border-radius: 8px;
+            margin: 1rem 0;
+            text-align: center;
+        }
+
+        /* Success States */
+        .success-message {
+            background: var(--success);
+            color: var(--white);
+            padding: 1rem;
+            border-radius: 8px;
+            margin: 1rem 0;
+            text-align: center;
+        }
+
+        /* Responsive Design */
+        @media (max-width: 480px) {
+            .container {
+                max-width: 100%;
+            }
+            
+            .dashboard {
+                padding: 1rem;
+            }
+            
+            .activity-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .action-buttons {
+                flex-direction: column;
+            }
+        }
+
+        /* HTMX Loading Indicators */
+        .htmx-indicator {
+            opacity: 0;
+            transition: opacity 500ms ease-in;
+        }
+
+        .htmx-request .htmx-indicator {
+            opacity: 1;
+        }
+
+        .htmx-request.htmx-indicator {
+            opacity: 1;
+        }
+
+        /* Animation Classes */
+        .slide-in {
+            animation: slideIn 0.3s ease-out;
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        .fade-in {
+            animation: fadeIn 0.3s ease-out;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Main Dashboard -->
+        <div id="main-dashboard">
+            <header class="header">
+                <button class="menu-btn">☰</button>
+                <h1>🏏 Cricket Fitness Tracker</h1>
+                <button class="settings-btn">⚙️</button>
+                <div class="date" id="current-date"></div>
+            </header>
+
+            <main class="dashboard">
+                <div class="greeting">
+                    <h2>👋 Hi Ramesh!</h2>
+                </div>
+
+                <section>
+                    <div class="section-title">
+                        🎤 LOG TODAY'S ACTIVITIES
+                    </div>
+                    
+                    <div class="activity-grid">
+                        <div class="activity-card fitness" onclick="handleActivityClick('fitness')">
+                            <div class="activity-icon">🏃</div>
+                            <div class="activity-title">FITNESS</div>
+                            <div class="activity-status" id="fitness-status">Not logged</div>
+                        </div>
+
+                        <div class="activity-card cricket" onclick="handleActivityClick('cricket')">
+                            <div class="activity-icon">🏏</div>
+                            <div class="activity-title">CRICKET</div>
+                            <div class="activity-status" id="cricket-status">Not logged</div>
+                        </div>
+
+                        <div class="activity-card rest" onclick="handleActivityClick('rest')">
+                            <div class="activity-icon">😴</div>
+                            <div class="activity-title">REST DAY</div>
+                            <div class="activity-status" id="rest-status">Not logged</div>
+                        </div>
+
+                        <div class="activity-card match" onclick="handleActivityClick('match')">
+                            <div class="activity-icon">🏆</div>
+                            <div class="activity-title">MATCH</div>
+                            <div class="activity-status" id="match-status">Not logged</div>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="quick-stats">
+                    <h3>📊 QUICK STATS</h3>
+                    <div class="stats-row">
+                        <span>This week: 🏃 4/7 days</span>
+                        <div class="progress-bar">
+                            <div class="progress-block filled"></div>
+                            <div class="progress-block filled"></div>
+                            <div class="progress-block filled"></div>
+                            <div class="progress-block filled"></div>
+                            <div class="progress-block"></div>
+                            <div class="progress-block"></div>
+                            <div class="progress-block"></div>
+                        </div>
+                    </div>
+                    <div class="stats-row">
+                        <span>🏏 3 sessions</span>
+                        <div class="progress-bar">
+                            <div class="progress-block filled"></div>
+                            <div class="progress-block filled"></div>
+                            <div class="progress-block filled"></div>
+                            <div class="progress-block"></div>
+                            <div class="progress-block"></div>
+                            <div class="progress-block"></div>
+                            <div class="progress-block"></div>
+                        </div>
+                    </div>
+                </section>
+
+                <div class="action-buttons">
+                    <button class="btn btn-primary" onclick="alert('Analytics coming soon!')">
+                        📈 View Progress
+                    </button>
+                    <button class="btn btn-secondary" onclick="alert('AI Chat coming soon!')">
+                        🤖 Ask AI
+                    </button>
+                </div>
+            </main>
+        </div>
+
+        <!-- Dynamic Content Area -->
+        <div id="app-content"></div>
+
+        <!-- Loading Indicator -->
+        <div class="loading htmx-indicator">
+            <div class="spinner"></div>
+            <p>Setting up voice session...</p>
+        </div>
+    </div>
+
+    <script>
+        // Initialize date display
+        function updateDate() {
+            const today = new Date();
+            const options = { 
+                weekday: 'long', 
+                year: 'numeric', 
+                month: 'long', 
+                day: 'numeric' 
+            };
+            document.getElementById('current-date').textContent = 
+                `📅 Today - ${today.toLocaleDateString('en-US', options)}`;
+        }
+
+        // Voice recording functionality
+        let mediaRecorder;
+        let audioChunks = [];
+        let websocket;
+        let currentSessionId;
+        let currentActivityType;
+
+        // Handle activity card clicks (bypass HTMX for reliability)
+        async function handleActivityClick(activityType) {
+            console.log('Activity clicked:', activityType);
+            
+            try {
+                // Show loading indicator
+                const loadingDiv = document.querySelector('.loading');
+                if (loadingDiv) {
+                    loadingDiv.classList.add('htmx-indicator');
+                }
+                
+                // Create session using the same method as test.html
+                console.log('Creating session...');
+                const response = await fetch('/api/sessions', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+                const data = await response.json();
+                console.log('Session created:', data);
+                
+                if (data.success) {
+                    currentSessionId = data.data.session_id;
+                    currentActivityType = activityType;
+                    
+                    // Update activity status
+                    const statusElement = document.getElementById(`${activityType}-status`);
+                    if (statusElement) {
+                        statusElement.textContent = 'Session created...';
+                        statusElement.classList.add('logged');
+                    }
+                    
+                    showVoiceInterface(activityType);
+                    initializeWebSocket(currentSessionId);
+                } else {
+                    throw new Error('Session creation failed');
+                }
+                
+            } catch (error) {
+                console.error('Error creating session:', error);
+                showError('Failed to start voice session: ' + error.message);
+            } finally {
+                // Hide loading indicator
+                const loadingDiv = document.querySelector('.loading');
+                if (loadingDiv) {
+                    loadingDiv.classList.remove('htmx-indicator');
+                }
+            }
+        }
+
+        // Keep the original function for backward compatibility
+        window.startVoiceSession = function(activityType, responseText) {
+            try {
+                const response = JSON.parse(responseText);
+                if (response.success) {
+                    currentSessionId = response.data.session_id;
+                    currentActivityType = activityType;
+                    showVoiceInterface(activityType);
+                    initializeWebSocket(currentSessionId);
+                } else {
+                    showError('Failed to create session. Please try again.');
+                }
+            } catch (error) {
+                console.error('Error parsing session response:', error);
+                showError('Failed to start voice session.');
+            }
+        };
+
+        // Show voice interface
+        function showVoiceInterface(activityType) {
+            console.log('🎬 Showing voice interface for:', activityType);
+            document.getElementById('main-dashboard').style.display = 'none';
+            
+            const activityNames = {
+                fitness: 'FITNESS LOGGING',
+                cricket: 'CRICKET LOGGING',
+                rest: 'REST DAY LOGGING',
+                match: 'MATCH LOGGING'
+            };
+
+            const activityIcons = {
+                fitness: '🏃',
+                cricket: '🏏',
+                rest: '😴',
+                match: '🏆'
+            };
+
+            const questions = {
+                fitness: "What type of fitness activity did you do today?",
+                cricket: "What type of cricket session did you have today?",
+                rest: "How did you spend your rest day?",
+                match: "Tell me about your match today."
+            };
+
+            document.getElementById('app-content').innerHTML = `
+                <div class="voice-interface slide-in" style="display: block !important; background: white; position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 1000; max-width: 400px; margin: 0 auto;">
+                    <header style="background: #22c55e; color: white; padding: 1rem; display: flex; align-items: center; gap: 1rem;">
+                        <button onclick="goBack()" style="background: none; border: none; color: white; font-size: 1.5rem; cursor: pointer;">←</button>
+                        <h2 style="margin: 0; color: white;">${activityIcons[activityType]} ${activityNames[activityType]}</h2>
+                    </header>
+
+                    <div style="padding: 2rem; text-align: center; background: white; min-height: calc(100vh - 80px);">
+                        <div style="font-size: 3rem; margin-bottom: 1rem; animation: pulse 2s infinite;">🎤</div>
+                        <h3 style="margin-bottom: 2rem; color: #1f2937;">LISTENING...</h3>
+
+                        <div style="background: #f3f4f6; border-radius: 12px; padding: 1rem; margin-bottom: 2rem; font-style: italic; color: #374151;">
+                            "${questions[activityType]}"
+                        </div>
+
+                        <div style="background: #f3f4f6; border-radius: 12px; padding: 2rem; margin-bottom: 2rem;">
+                            <button class="record-btn" style="width: 80px; height: 80px; border-radius: 50%; background: #ef4444; color: white; border: none; font-size: 1.5rem; cursor: pointer; margin-bottom: 1rem; transition: all 0.3s; display: block; margin-left: auto; margin-right: auto;">🎤</button>
+                            <div class="waveform" style="height: 40px; display: none; align-items: center; justify-content: center; gap: 2px;">
+                                <div style="width: 3px; height: 10px; background: #3b82f6; border-radius: 2px; animation: wave 1s infinite ease-in-out;"></div>
+                                <div style="width: 3px; height: 20px; background: #3b82f6; border-radius: 2px; animation: wave 1s infinite ease-in-out 0.1s;"></div>
+                                <div style="width: 3px; height: 15px; background: #3b82f6; border-radius: 2px; animation: wave 1s infinite ease-in-out 0.2s;"></div>
+                                <div style="width: 3px; height: 25px; background: #3b82f6; border-radius: 2px; animation: wave 1s infinite ease-in-out 0.3s;"></div>
+                                <div style="width: 3px; height: 10px; background: #3b82f6; border-radius: 2px; animation: wave 1s infinite ease-in-out 0.4s;"></div>
+                            </div>
+                        </div>
+
+                        <div class="transcript-area" style="background: white; border: 2px solid #e5e7eb; border-radius: 8px; padding: 1rem; margin-bottom: 1rem; min-height: 80px; text-align: left;">
+                            <div style="font-weight: 600; color: #6b7280; font-size: 0.9rem; margin-bottom: 0.5rem;">💬 You said:</div>
+                            <p style="color: #6b7280; font-style: italic; margin: 0;">Tap the microphone button to start recording...</p>
+                        </div>
+
+                        <div style="display: flex; gap: 1rem; margin-bottom: 2rem;">
+                            <button style="flex: 1; padding: 0.75rem; border: none; border-radius: 8px; background: #6b7280; color: white; cursor: pointer;">🎤 RE-RECORD</button>
+                            <button style="flex: 1; padding: 0.75rem; border: none; border-radius: 8px; background: #10b981; color: white; cursor: pointer;">✅ CONTINUE</button>
+                        </div>
+
+                        <div style="display: flex; justify-content: center; gap: 0.5rem; margin-top: 2rem;">
+                            <div style="width: 12px; height: 12px; border-radius: 50%; background: #3b82f6;"></div>
+                            <div style="width: 12px; height: 12px; border-radius: 50%; background: #e5e7eb;"></div>
+                            <div style="width: 12px; height: 12px; border-radius: 50%; background: #e5e7eb;"></div>
+                            <div style="width: 12px; height: 12px; border-radius: 50%; background: #e5e7eb;"></div>
+                            <div style="width: 12px; height: 12px; border-radius: 50%; background: #e5e7eb;"></div>
+                        </div>
+                        <p style="margin-top: 0.5rem; color: #6b7280; font-size: 0.9rem;">Progress: ●○○○○ (1/5 questions)</p>
+                    </div>
+                </div>
+
+                <style>
+                    /* Force voice interface to be visible */
+                    .voice-interface {
+                        display: block !important;
+                        visibility: visible !important;
+                        opacity: 1 !important;
+                    }
+                    
+                    @keyframes pulse {
+                        0%, 100% { opacity: 1; }
+                        50% { opacity: 0.5; }
+                    }
+                    @keyframes wave {
+                        0%, 100% { height: 10px; }
+                        50% { height: 30px; }
+                    }
+                    .slide-in {
+                        animation: slideIn 0.3s ease-out;
+                    }
+                    @keyframes slideIn {
+                        from { transform: translateX(100%); opacity: 0; }
+                        to { transform: translateX(0); opacity: 1; }
+                    }
+                </style>
+            `;
+            
+            console.log('✅ Voice interface HTML generated and inserted');
+            
+            // Verify elements are in DOM and visible
+            setTimeout(() => {
+                const recordBtn = document.querySelector('.record-btn');
+                const waveform = document.querySelector('.waveform');
+                const voiceInterface = document.querySelector('.voice-interface');
+                
+                console.log('🔍 Post-render element check:', {
+                    recordBtn: !!recordBtn,
+                    waveform: !!waveform,
+                    voiceInterface: !!voiceInterface
+                });
+                
+                // Force the voice interface to be visible
+                if (voiceInterface) {
+                    console.log('🔧 Forcing voice interface to be visible...');
+                    voiceInterface.style.display = 'block';
+                    voiceInterface.style.visibility = 'visible';
+                    voiceInterface.style.opacity = '1';
+                    
+                    const interfaceStyle = window.getComputedStyle(voiceInterface);
+                    console.log('🖼️ Voice interface styles (after force):', {
+                        display: interfaceStyle.display,
+                        visibility: interfaceStyle.visibility,
+                        position: interfaceStyle.position,
+                        zIndex: interfaceStyle.zIndex,
+                        backgroundColor: interfaceStyle.backgroundColor,
+                        opacity: interfaceStyle.opacity
+                    });
+                }
+                
+                if (recordBtn) {
+                    const btnStyle = window.getComputedStyle(recordBtn);
+                    console.log('🎨 Record button styles:', {
+                        display: btnStyle.display,
+                        visibility: btnStyle.visibility,
+                        backgroundColor: btnStyle.backgroundColor,
+                        width: btnStyle.width,
+                        height: btnStyle.height
+                    });
+                }
+            }, 100);
+        }
+
+        // WebSocket connection management
+        function initializeWebSocket(sessionId) {
+            const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = `${protocol}//${location.host}/ws/voice/${sessionId}`;
+            
+            websocket = new WebSocket(wsUrl);
+            
+            websocket.onopen = function(event) {
+                console.log('WebSocket connected');
+                showSuccess('Voice session ready! You can now start recording.');
+            };
+            
+            websocket.onmessage = function(event) {
+                const data = JSON.parse(event.data);
+                handleWebSocketMessage(data);
+            };
+            
+            websocket.onerror = function(error) {
+                console.error('WebSocket error:', error);
+                showError('Connection error. Please try again.');
+            };
+            
+            websocket.onclose = function(event) {
+                console.log('WebSocket closed');
+            };
+        }
+
+        function handleWebSocketMessage(data) {
+            switch(data.type) {
+                case 'connection_established':
+                    console.log('Voice session ready');
+                    break;
+                case 'voice_received':
+                    showProcessingIndicator();
+                    break;
+                case 'transcript_ready':
+                    displayTranscript(data.data.transcript);
+                    break;
+                case 'voice_processed_complete':
+                    showConfirmationScreen(data.data);
+                    break;
+                case 'error':
+                    showError(data.message);
+                    break;
+            }
+        }
+
+        // Audio recording functions
+        async function startRecording() {
+            console.log('🎙️ startRecording() called');
+            
+            try {
+                console.log('🔍 Requesting microphone access...');
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    audio: {
+                        echoCancellation: true,
+                        noiseSuppression: true,
+                        autoGainControl: true,
+                        sampleRate: 16000
+                    } 
+                });
+                
+                console.log('✅ Microphone access granted');
+                
+                // Check supported MIME types (same as working debug.html)
+                const mimeTypes = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/wav'];
+                let selectedMimeType = '';
+                
+                for (const mimeType of mimeTypes) {
+                    if (MediaRecorder.isTypeSupported(mimeType)) {
+                        selectedMimeType = mimeType;
+                        console.log('✅ Using MIME type:', mimeType);
+                        break;
+                    }
+                }
+                
+                if (!selectedMimeType) {
+                    throw new Error('No supported audio MIME type found');
+                }
+                
+                mediaRecorder = new MediaRecorder(stream, { mimeType: selectedMimeType });
+                audioChunks = [];
+
+                mediaRecorder.ondataavailable = function(event) {
+                    if (event.data.size > 0) {
+                        audioChunks.push(event.data);
+                        console.log('📊 Audio chunk received:', event.data.size, 'bytes');
+                    }
+                };
+
+                mediaRecorder.onstop = function() {
+                    console.log('⏹️ Recording stopped, processing audio...');
+                    const audioBlob = new Blob(audioChunks, { type: selectedMimeType });
+                    console.log('📦 Audio blob created:', audioBlob.size, 'bytes');
+                    sendAudioToServer(audioBlob);
+                    
+                    // Stop all tracks to release microphone
+                    stream.getTracks().forEach(track => track.stop());
+                    console.log('🔇 Microphone tracks stopped');
+                };
+
+                mediaRecorder.onerror = function(event) {
+                    console.error('❌ MediaRecorder error:', event.error);
+                    showError('Recording error: ' + (event.error ? event.error.message : 'Unknown error'));
+                    updateRecordingUI(false);
+                    // Stop all tracks to release microphone
+                    stream.getTracks().forEach(track => track.stop());
+                };
+
+                // Start recording with timeslice for real-time processing
+                console.log('▶️ Starting MediaRecorder...');
+                mediaRecorder.start(1000);
+                updateRecordingUI(true);
+                console.log('🎉 Recording started successfully with MIME type:', selectedMimeType);
+                showSuccess('🎤 Recording started! Speak now...');
+                
+                // Auto-stop after 10 seconds for testing
+                setTimeout(() => {
+                    if (mediaRecorder && mediaRecorder.state === 'recording') {
+                        console.log('⏰ Auto-stopping recording after 10 seconds');
+                        stopRecording();
+                    }
+                }, 10000);
+                
+                return Promise.resolve(); // Ensure function returns a promise
+                
+            } catch (error) {
+                console.error('❌ Error in startRecording():', error);
+                console.error('Error details:', {
+                    name: error.name,
+                    message: error.message,
+                    stack: error.stack
+                });
+                
+                if (error.name === 'NotAllowedError') {
+                    showError('🚫 Microphone access denied. Please click the microphone icon in the address bar and allow access.');
+                } else if (error.name === 'NotFoundError') {
+                    showError('🎤 No microphone found. Please connect a microphone and try again.');
+                } else {
+                    showError('❌ Microphone error: ' + error.message);
+                }
+                
+                return Promise.reject(error);
+            }
+        }
+
+        function stopRecording() {
+            console.log('⏹️ stopRecording() called');
+            console.log('📹 MediaRecorder state:', mediaRecorder ? mediaRecorder.state : 'no recorder');
+            
+            if (mediaRecorder && mediaRecorder.state === 'recording') {
+                console.log('✅ Stopping recording...');
+                try {
+                    mediaRecorder.stop();
+                    updateRecordingUI(false);
+                    console.log('🛑 Recording stopped successfully');
+                } catch (error) {
+                    console.error('❌ Error stopping recording:', error);
+                    showError('Error stopping recording: ' + error.message);
+                }
+            } else {
+                console.log('⚠️ Not currently recording or no recorder available');
+            }
+        }
+
+        function sendAudioToServer(audioBlob) {
+            console.log('📤 Attempting to send audio to server...');
+            console.log('🔗 WebSocket state:', websocket ? websocket.readyState : 'no websocket');
+            console.log('📦 Audio blob size:', audioBlob.size, 'bytes');
+            
+            if (websocket && websocket.readyState === WebSocket.OPEN) {
+                try {
+                    console.log('✅ Sending audio to server...');
+                    websocket.send(audioBlob);
+                    showProcessingIndicator();
+                    console.log('🚀 Audio sent successfully');
+                } catch (error) {
+                    console.error('❌ Failed to send audio:', error);
+                    showError('Failed to send audio: ' + error.message);
+                }
+            } else {
+                const state = websocket ? websocket.readyState : 'no websocket';
+                console.error('❌ WebSocket not connected, state:', state);
+                showError('Connection lost. Please refresh and try again.');
+            }
+        }
+
+        // UI update functions
+        function updateRecordingUI(isRecording) {
+            console.log('🎨 Updating UI, isRecording:', isRecording);
+            
+            const recordBtn = document.querySelector('.record-btn');
+            const waveform = document.querySelector('.waveform');
+            
+            console.log('🔍 Found elements:', {
+                recordBtn: !!recordBtn,
+                waveform: !!waveform
+            });
+            
+            if (recordBtn) {
+                recordBtn.textContent = isRecording ? '⏹️' : '🎤';
+                // Use direct color values instead of CSS variables to avoid issues
+                recordBtn.style.background = isRecording ? '#f59e0b' : '#ef4444';
+                recordBtn.disabled = false; // Re-enable button
+                
+                if (isRecording) {
+                    recordBtn.style.animation = 'recording-pulse 1s infinite';
+                    console.log('🔴 Recording UI activated');
+                } else {
+                    recordBtn.style.animation = 'none';
+                    console.log('⚪ Recording UI deactivated');
+                }
+            } else {
+                console.error('❌ Record button not found in DOM');
+            }
+            
+            if (waveform) {
+                waveform.style.display = isRecording ? 'flex' : 'none';
+                console.log('🌊 Waveform display:', isRecording ? 'shown' : 'hidden');
+            } else {
+                console.log('⚠️ Waveform element not found');
+            }
+        }
+
+        function displayTranscript(transcript) {
+            const transcriptArea = document.querySelector('.transcript-area');
+            if (transcriptArea) {
+                transcriptArea.innerHTML = `
+                    <div style="font-weight: 600; color: var(--neutral-gray); font-size: 0.9rem; margin-bottom: 0.5rem;">💬 You said:</div>
+                    <p style="color: var(--dark-gray);">"${transcript}"</p>
+                `;
+            }
+        }
+
+        function showProcessingIndicator() {
+            const transcriptArea = document.querySelector('.transcript-area');
+            if (transcriptArea) {
+                transcriptArea.innerHTML = `
+                    <div style="font-weight: 600; color: var(--neutral-gray); font-size: 0.9rem; margin-bottom: 0.5rem;">🔄 Processing...</div>
+                    <p style="color: var(--neutral-gray); font-style: italic;">Converting your speech to text...</p>
+                `;
+            }
+        }
+
+        function showConfirmationScreen(data) {
+            // This will show the data confirmation screen as per wireframes
+            console.log('Processing complete:', data);
+            showSuccess('Voice processing complete! Data has been structured.');
+        }
+
+        function showError(message) {
+            const errorDiv = document.createElement('div');
+            errorDiv.style.cssText = `
+                background: var(--error);
+                color: var(--white);
+                padding: 1rem;
+                border-radius: 8px;
+                margin: 1rem 0;
+                text-align: center;
+                position: fixed;
+                top: 20px;
+                left: 50%;
+                transform: translateX(-50%);
+                z-index: 1000;
+                max-width: 300px;
+            `;
+            errorDiv.textContent = message;
+            
+            document.body.appendChild(errorDiv);
+            setTimeout(() => errorDiv.remove(), 5000);
+        }
+
+        function showSuccess(message) {
+            const successDiv = document.createElement('div');
+            successDiv.style.cssText = `
+                background: var(--success);
+                color: var(--white);
+                padding: 1rem;
+                border-radius: 8px;
+                margin: 1rem 0;
+                text-align: center;
+                position: fixed;
+                top: 20px;
+                left: 50%;
+                transform: translateX(-50%);
+                z-index: 1000;
+                max-width: 300px;
+            `;
+            successDiv.textContent = message;
+            
+            document.body.appendChild(successDiv);
+            setTimeout(() => successDiv.remove(), 3000);
+        }
+
+        // Back navigation
+        function goBack() {
+            if (websocket) {
+                websocket.close();
+            }
+            document.getElementById('app-content').innerHTML = '';
+            document.getElementById('main-dashboard').style.display = 'block';
+        }
+
+        // Initialize app
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('🚀 App initialized - DOMContentLoaded fired');
+            console.log('🌐 Current URL:', window.location.href);
+            console.log('🔧 Browser info:', {
+                userAgent: navigator.userAgent,
+                language: navigator.language
+            });
+            
+            updateDate();
+            
+            // Update date every minute
+            setInterval(updateDate, 60000);
+            
+            // Test basic functionality
+            console.log('🧪 Testing basic functionality...');
+            console.log('✅ getUserMedia available:', !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia));
+            console.log('✅ MediaRecorder available:', !!window.MediaRecorder);
+            console.log('✅ WebSocket available:', !!window.WebSocket);
+            
+            // Add global event listeners for voice interface
+            document.addEventListener('click', function(e) {
+                if (e.target.classList.contains('record-btn')) {
+                    console.log('🎤 Record button clicked!');
+                    console.log('📍 Button element:', e.target);
+                    console.log('📹 MediaRecorder state:', mediaRecorder ? mediaRecorder.state : 'no recorder');
+                    
+                    // Prevent multiple clicks
+                    if (e.target.disabled) {
+                        console.log('⚠️ Button is disabled, ignoring click');
+                        return;
+                    }
+                    
+                    try {
+                        if (mediaRecorder && mediaRecorder.state === 'recording') {
+                            console.log('⏹️ Stopping recording...');
+                            stopRecording();
+                        } else {
+                            console.log('🎙️ Starting recording...');
+                            e.target.disabled = true; // Prevent double-clicks
+                            startRecording().finally(() => {
+                                e.target.disabled = false;
+                                console.log('🔓 Button re-enabled');
+                            });
+                        }
+                    } catch (error) {
+                        console.error('❌ Error in record button handler:', error);
+                        showError('Recording error: ' + error.message);
+                        e.target.disabled = false;
+                    }
+                }
+            });
+            
+            console.log('✅ Event listeners attached successfully');
+        });
+
+        // Handle WebSocket cleanup
+        window.addEventListener('beforeunload', function() {
+            if (websocket) {
+                websocket.close();
+            }
+        });
+
+        // Add recording pulse animation
+        const style = document.createElement('style');
+        style.textContent = `
+            @keyframes recording-pulse {
+                0%, 100% { transform: scale(1); }
+                50% { transform: scale(1.1); }
+            }
+        `;
+        document.head.appendChild(style);
+    </script>
+</body>
+</html> 

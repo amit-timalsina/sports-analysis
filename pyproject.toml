@@ -1,0 +1,172 @@
+[tool.poetry]
+name = "cricket-fitness-tracker"
+version = "0.1.0"
+description = "AI-powered cricket and fitness tracker with voice-based logging and analytics"
+authors = ["Amit Timalsina <amittimalsina14@gmail.com>"]
+license = "MIT"
+readme = "README.md"
+packages = [{include = "app"}]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+
+# Core Framework - FastAPI + HTMX
+fastapi = "^0.109.0"
+uvicorn = {extras = ["standard"], version = "^0.27.0"}  # Includes uvloop, httptools, websockets, watchfiles
+
+# WebSocket & HTTP Support
+websockets = "^12.0"
+python-multipart = "^0.0.6"  # For file uploads and form data
+jinja2 = "^3.1.2"  # Template engine
+
+# Database - PostgreSQL + SQLAlchemy 2.0
+psycopg = {extras = ["binary"], version = "^3.1.0"}  # PostgreSQL adapter (modern psycopg3)
+sqlalchemy = "^2.0.25"  # ORM with async support
+sqlmodel = "^0.0.14"  # SQLModel for modern database models
+alembic = "^1.13.0"  # Database migrations
+
+# AI/ML and Voice Processing
+openai = "^1.12.0"  # OpenAI API with structured outputs
+librosa = "^0.10.1"  # Audio analysis and processing
+soundfile = "^0.12.1"  # Audio file I/O (required by librosa)
+numpy = "^1.24.0"  # Numerical computations
+scipy = "^1.11.0"  # Scientific computing (required by librosa)
+
+# Data Processing & Validation
+pydantic = "^2.5.0"  # Data validation with v2 features
+pydantic-settings = "^2.1.0"  # Settings management
+pandas = "^2.1.0"  # Data manipulation and analysis
+
+# Security & Authentication
+python-jose = {extras = ["cryptography"], version = "^3.3.0"}  # JWT handling
+passlib = {extras = ["bcrypt"], version = "^1.7.4"}  # Password hashing
+
+# HTTP Client & Async Support
+httpx = "^0.26.0"  # Async HTTP client
+aiofiles = "^23.2.1"  # Async file operations
+
+# Environment & Configuration
+python-dotenv = "^1.0.0"  # Environment variable loading
+pyyaml = "^6.0.1"  # YAML configuration support
+
+# Monitoring & Logging
+structlog = "^23.2.0"  # Structured logging
+rich = "^13.7.0"  # Beautiful console output
+langfuse = "^3.0.8"
+asyncpg = "^0.30.0"
+aiosqlite = "^0.21.0"
+
+[tool.poetry.group.dev.dependencies]
+# Testing
+pytest = "^7.4.0"
+pytest-asyncio = "^0.23.0"
+pytest-cov = "^4.1.0"
+pytest-mock = "^3.12.0"
+factory-boy = "^3.3.0"  # Test data factories
+httpx = "^0.26.0"  # For testing FastAPI endpoints
+
+# Linting & Formatting
+black = "^23.12.0"
+isort = "^5.13.0"
+flake8 = "^7.0.0"
+mypy = "^1.8.0"
+
+# Development Tools
+pre-commit = "^3.6.0"
+watchfiles = "^0.21.0"
+ruff = "^0.12.1"
+
+[tool.poetry.group.production.dependencies]
+# Production monitoring
+prometheus-client = "^0.19.0"
+sentry-sdk = {extras = ["fastapi"], version = "^1.40.0"}
+
+# Performance
+uvloop = "^0.19.0"  # High-performance event loop
+orjson = "^3.9.0"  # Fast JSON serialization
+
+[tool.poetry.group.audio.dependencies]
+# Additional audio processing capabilities (optional)
+# Note: PyAudio requires system PortAudio libraries and can be problematic in Docker
+# pyaudio = "^0.2.11"  # Real-time audio I/O (commented out due to Docker build issues)
+pydub = "^0.25.1"  # Audio manipulation  
+webrtcvad = "^2.0.10"  # Voice activity detection
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "--strict-markers",
+    "--strict-config",
+    "--cov=app",
+    "--cov-report=term-missing",
+    "--cov-report=html",
+    "--cov-report=xml",
+]
+asyncio_mode = "auto"
+
+[tool.mypy]
+python_version = "3.11"
+check_untyped_defs = true
+disallow_any_generics = true
+disallow_incomplete_defs = true
+disallow_untyped_defs = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_return_any = true
+strict_optional = true
+
+[[tool.mypy.overrides]]
+module = [
+    "librosa.*",
+    "soundfile.*",
+    "uvloop.*",
+]
+ignore_missing_imports = true
+
+[tool.coverage.run]
+source = ["app"]
+omit = [
+    "*/tests/*",
+    "*/venv/*",
+    "*/__pycache__/*",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+]
+
+[tool.ruff]
+line-length = 100
+
+# Assume Python 3.11
+target-version = "py311"
+
+# In addition to the standard set of exclusions, exclude the following directories.
+extend-exclude = [".venv", "ipynb_experiments"]
+
+# Group violations by containing file.
+output-format = "grouped"
+
+[tool.ruff.lint]
+# Enable import rules
+select = ["ALL"]
+ignore = ["D100", "D203", "D212", "COM819", "TD", "FIX"]
+extend-select = ["I"]
+
+[tool.ruff.lint.per-file-ignores]
+"**/tests/**/*.py" = ["S101", "ANN201", "D103", "D101"]
+"alembic/**/*.py" = ["INP", "ERA", "T", "D"]
+"**/routers/**/*.py" = ["D417", "FAST001"]
