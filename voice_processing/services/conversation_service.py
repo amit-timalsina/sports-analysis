@@ -6,9 +6,11 @@ from typing import Any
 
 from langfuse import observe
 from langfuse.openai import AsyncOpenAI
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from common.config.settings import settings
 from common.exceptions import AppError
+from voice_processing.repositories.conversation_repository import ConversationRepository
 from voice_processing.schemas.conversation import (
     ActivityType,
     ConversationAnalysis,
@@ -32,11 +34,13 @@ class ConversationServiceError(AppError):
 class ConversationService:
     """Service for managing multi-turn voice conversations with OpenAI."""
 
-    def __init__(self) -> None:
+    def __init__(self, db_session: AsyncSession | None = None) -> None:
         """Initialize conversation service."""
         self._client: AsyncOpenAI | None = None
         self.active_conversations: dict[str, ConversationContext] = {}
         self.max_turns = 8  # Maximum conversation turns before forcing completion
+        self.db_session = db_session
+        self.conversation_repo = ConversationRepository(db_session) if db_session else None
 
         # Define required and optional fields for each activity type
         self.required_fields = {
@@ -127,7 +131,7 @@ class ConversationService:
 
         return self._client
 
-    def start_conversation(
+    async def start_conversation(
         self,
         session_id: str,
         user_id: str,
@@ -142,8 +146,18 @@ class ConversationService:
         )
 
         self.active_conversations[session_id] = context
-        logger.info("Started conversation for session %s, activity: %s", session_id, activity_type)
 
+        # Persist conversation to database if repository is available
+        if self.conversation_repo and self.db_session:
+            try:
+                await self.conversation_repo.create_conversation(context)
+                await self.db_session.commit()
+                logger.info("Persisted conversation to database for session %s", session_id)
+            except Exception as e:
+                logger.warning("Failed to persist conversation to database: %s", e)
+                # Continue without database persistence
+
+        logger.info("Started conversation for session %s, activity: %s", session_id, activity_type)
         return context
 
     def get_conversation(self, session_id: str) -> ConversationContext | None:
@@ -195,11 +209,13 @@ class ConversationService:
         )
 
         # Extract new data from user input
+        start_time = datetime.utcnow()
         extracted_data = await self._extract_data_from_input(
             user_input=user_input,
             activity_type=context.activity_type,
             existing_data=context.collected_data,
         )
+        processing_duration = (datetime.utcnow() - start_time).total_seconds()
 
         # Update collected data with new extractions
         context.collected_data.update(extracted_data)
@@ -233,6 +249,43 @@ class ConversationService:
             analysis_confidence=data_completeness.confidence_score,
             reasoning=f"Turn {context.turn_count}: {'Complete' if data_completeness.is_complete else f'Missing {len(data_completeness.missing_fields)} fields'}",
         )
+
+        # **NEW**: Persist conversation turn to database
+        if self.conversation_repo:
+            try:
+                await self.conversation_repo.add_conversation_turn(
+                    session_id=session_id,
+                    turn_number=context.turn_count,
+                    user_input=user_input,
+                    transcript_confidence=transcript_confidence,
+                    extracted_data=extracted_data,
+                    ai_response=analysis.reasoning,
+                    follow_up_question=next_question.question if next_question else None,
+                    target_field=next_question.field_target if next_question else None,
+                    extraction_confidence=data_completeness.confidence_score,
+                    data_completeness_score=data_completeness.completeness_score,
+                    missing_fields=data_completeness.missing_fields,
+                    processing_duration=processing_duration,
+                )
+
+                # Update conversation state
+                new_state = (
+                    DbConversationState.ASKING_FOLLOWUP
+                    if should_continue
+                    else DbConversationState.COMPLETED
+                )
+                await self.conversation_repo.update_conversation_state(session_id, new_state)
+
+                if self.db_session:
+                    await self.db_session.commit()
+                logger.info(
+                    "Persisted conversation turn %d for session %s",
+                    context.turn_count,
+                    session_id,
+                )
+            except Exception as e:
+                logger.warning("Failed to persist conversation turn: %s", e)
+                # Continue without database persistence
 
         logger.info(
             "Analysis for session %s: continue=%s, complete=%s, missing_fields=%s",

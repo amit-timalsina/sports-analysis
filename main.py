@@ -39,7 +39,7 @@ from fitness_tracking.repositories.fitness_repository import FitnessRepository
 from voice_processing.schemas.conversation import ActivityType
 from voice_processing.schemas.processing import WebSocketMessage
 from voice_processing.services.audio_storage import audio_storage
-from voice_processing.services.conversation_service import conversation_service
+from voice_processing.services.conversation_service import ConversationService
 from voice_processing.services.openai_service import openai_service
 from voice_processing.websocket.manager import connection_manager
 
@@ -523,49 +523,47 @@ async def handle_audio_chunk(session_id: str, audio_chunk: bytes) -> None:
 
 @observe(capture_input=True, capture_output=False)
 async def handle_complete_audio_processing(session_id: str) -> None:
-    """Process complete accumulated audio with multi-turn conversation support."""
+    """Process complete accumulated audio for a session using multi-turn conversation."""
     try:
-        start_time = datetime.now(UTC)
+        # Use the global connection_manager instance
+        user_data = connection_manager.get_session_metadata(session_id)
 
-        # Get accumulated audio data
+        if not user_data:
+            error_message = WebSocketMessage(
+                type="error",
+                session_id=session_id,
+                error="session_not_found",
+                message="Session data not found",
+            )
+            await connection_manager.send_message(error_message, session_id)
+            return
+
+        entry_type = user_data.get("entry_type")
+        user_id = user_data.get("user_id", "demo_user")
+
+        if not entry_type:
+            error_message = WebSocketMessage(
+                type="error",
+                session_id=session_id,
+                error="missing_entry_type",
+                message="Entry type not specified",
+            )
+            await connection_manager.send_message(error_message, session_id)
+            return
+
+        # Get accumulated audio
         voice_data = connection_manager.get_accumulated_audio(session_id)
-
-        if len(voice_data) == 0:
+        if not voice_data:
             error_message = WebSocketMessage(
                 type="error",
                 session_id=session_id,
                 error="no_audio_data",
-                message="No audio data accumulated for processing",
+                message="No audio data found for processing",
             )
             await connection_manager.send_message(error_message, session_id)
             return
 
-        # Check minimum audio size for meaningful content
-        min_audio_size = 1000  # At least 1KB for meaningful audio
-        if len(voice_data) < min_audio_size:
-            error_message = WebSocketMessage(
-                type="error",
-                session_id=session_id,
-                error="insufficient_audio_data",
-                message=f"Audio data too small: {len(voice_data)} bytes. Please record for longer.",
-            )
-            await connection_manager.send_message(error_message, session_id)
-            return
-
-        # Get session metadata (entry_type and user_id)
-        session_metadata = connection_manager.get_session_metadata(session_id)
-        if not session_metadata:
-            error_message = WebSocketMessage(
-                type="error",
-                session_id=session_id,
-                error="no_session_metadata",
-                message="Please send voice_data_meta message first with entry_type",
-            )
-            await connection_manager.send_message(error_message, session_id)
-            return
-
-        entry_type = session_metadata.get("entry_type")
-        user_id = session_metadata.get("user_id", "demo_user")
+        start_time = datetime.now(UTC)
 
         # Send processing start acknowledgment
         processing_message = WebSocketMessage(
@@ -610,123 +608,128 @@ async def handle_complete_audio_processing(session_id: str) -> None:
         )
         await connection_manager.send_message(transcript_message, session_id)
 
-        # 3. **NEW**: Use conversation service for multi-turn processing
-        # Map entry_type to ActivityType
-        activity_type_mapping = {
-            "fitness": ActivityType.FITNESS,
-            "cricket_coaching": ActivityType.CRICKET_COACHING,
-            "cricket_match": ActivityType.CRICKET_MATCH,
-            "rest_day": ActivityType.REST_DAY,
-        }
-        activity_type = activity_type_mapping.get(entry_type)
+        # 3. **NEW**: Use conversation service for multi-turn processing with database session
+        async with sessionmanager.get_session() as db_session:
+            # Initialize conversation service with database session
+            conversation_service_with_db = ConversationService(db_session=db_session)
 
-        if not activity_type:
-            error_message = WebSocketMessage(
-                type="error",
+            # Map entry_type to ActivityType
+            activity_type_mapping = {
+                "fitness": ActivityType.FITNESS,
+                "cricket_coaching": ActivityType.CRICKET_COACHING,
+                "cricket_match": ActivityType.CRICKET_MATCH,
+                "rest_day": ActivityType.REST_DAY,
+            }
+            activity_type = activity_type_mapping.get(entry_type)
+
+            if not activity_type:
+                error_message = WebSocketMessage(
+                    type="error",
+                    session_id=session_id,
+                    error="invalid_activity_type",
+                    message=f"Unsupported activity type: {entry_type}",
+                )
+                await connection_manager.send_message(error_message, session_id)
+                return
+
+            # Start or continue conversation
+            conversation_context = conversation_service_with_db.get_conversation(session_id)
+            if not conversation_context:
+                # Start new conversation
+                conversation_context = await conversation_service_with_db.start_conversation(
+                    session_id=session_id,
+                    user_id=user_id,
+                    activity_type=activity_type,
+                )
+
+                # Send conversation started message
+                conversation_started_message = WebSocketMessage(
+                    type="conversation_started",
+                    session_id=session_id,
+                    data={
+                        "activity_type": activity_type.value,
+                        "message": "I'll help you log your activity. Let's start with what you've told me and I'll ask follow-up questions to get all the details.",
+                    },
+                )
+                await connection_manager.send_message(conversation_started_message, session_id)
+
+            # Process user input and get conversation analysis
+            conversation_analysis = await conversation_service_with_db.process_user_input(
                 session_id=session_id,
-                error="invalid_activity_type",
-                message=f"Unsupported activity type: {entry_type}",
-            )
-            await connection_manager.send_message(error_message, session_id)
-            return
-
-        # Start or continue conversation
-        conversation_context = conversation_service.get_conversation(session_id)
-        if not conversation_context:
-            # Start new conversation
-            conversation_context = conversation_service.start_conversation(
-                session_id=session_id,
-                user_id=user_id,
-                activity_type=activity_type,
+                user_input=transcription_result.text,
+                transcript_confidence=transcription_result.confidence,
             )
 
-            # Send conversation started message
-            conversation_started_message = WebSocketMessage(
-                type="conversation_started",
-                session_id=session_id,
-                data={
-                    "activity_type": activity_type.value,
-                    "message": "I'll help you log your activity. Let's start with what you've told me and I'll ask follow-up questions to get all the details.",
-                },
-            )
-            await connection_manager.send_message(conversation_started_message, session_id)
+            # 4. Determine next step based on conversation analysis
+            if conversation_analysis.should_continue and conversation_analysis.next_question:
+                # Ask follow-up question
+                follow_up_message = WebSocketMessage(
+                    type="follow_up_question",
+                    session_id=session_id,
+                    data={
+                        "question": conversation_analysis.next_question.question,
+                        "field_target": conversation_analysis.next_question.field_target,
+                        "question_type": conversation_analysis.next_question.question_type,
+                        "priority": conversation_analysis.next_question.priority,
+                        "turn_number": conversation_context.turn_count,
+                        "completeness_score": conversation_analysis.data_completeness.completeness_score,
+                        "collected_data": conversation_context.collected_data,
+                        "missing_fields": conversation_analysis.data_completeness.missing_fields,
+                        "instructions": "Please answer the question and then tap the microphone to record your response.",
+                    },
+                )
+                await connection_manager.send_message(follow_up_message, session_id)
 
-        # Process user input and get conversation analysis
-        conversation_analysis = await conversation_service.process_user_input(
-            session_id=session_id,
-            user_input=transcription_result.text,
-            transcript_confidence=transcription_result.confidence,
-        )
+                logger.info(
+                    "Sent follow-up question for session %s: %s (targeting field: %s)",
+                    session_id,
+                    conversation_analysis.next_question.question,
+                    conversation_analysis.next_question.field_target,
+                )
 
-        # 4. Determine next step based on conversation analysis
-        if conversation_analysis.should_continue and conversation_analysis.next_question:
-            # Ask follow-up question
-            follow_up_message = WebSocketMessage(
-                type="follow_up_question",
-                session_id=session_id,
-                data={
-                    "question": conversation_analysis.next_question.question,
-                    "field_target": conversation_analysis.next_question.field_target,
-                    "question_type": conversation_analysis.next_question.question_type,
-                    "priority": conversation_analysis.next_question.priority,
-                    "turn_number": conversation_context.turn_count,
-                    "completeness_score": conversation_analysis.data_completeness.completeness_score,
-                    "collected_data": conversation_context.collected_data,
-                    "missing_fields": conversation_analysis.data_completeness.missing_fields,
-                    "instructions": "Please answer the question and then tap the microphone to record your response.",
-                },
-            )
-            await connection_manager.send_message(follow_up_message, session_id)
+            elif conversation_analysis.can_generate_final_output:
+                # Complete conversation and save to database
+                conversation_result = conversation_service_with_db.complete_conversation(session_id)
 
-            logger.info(
-                "Sent follow-up question for session %s: %s (targeting field: %s)",
-                session_id,
-                conversation_analysis.next_question.question,
-                conversation_analysis.next_question.field_target,
-            )
+                # Save final structured data to database
+                structured_data = conversation_result.final_data
+                saved_entry = None
+                processing_duration = (datetime.now(UTC) - start_time).total_seconds()
 
-        elif conversation_analysis.can_generate_final_output:
-            # Complete conversation and save to database
-            conversation_result = conversation_service.complete_conversation(session_id)
-
-            # Save final structured data to database
-            structured_data = conversation_result.final_data
-            saved_entry = None
-            processing_duration = (datetime.now(UTC) - start_time).total_seconds()
-
-            # Get all transcripts from the conversation context
-            conversation_context = conversation_service.get_conversation(session_id)
-            all_transcripts = ""
-            if conversation_context and hasattr(conversation_context, "transcript_history"):
-                # Combine all transcripts with turn numbers
-                transcript_parts = []
-                for turn_data in conversation_context.transcript_history:
-                    turn_num = (
-                        turn_data.get("turn")
-                        if isinstance(turn_data, dict)
-                        else getattr(turn_data, "turn", "N/A")
-                    )
-                    transcript = (
-                        turn_data.get("transcript")
-                        if isinstance(turn_data, dict)
-                        else getattr(turn_data, "transcript", "")
-                    )
-                    confidence = (
-                        turn_data.get("confidence")
-                        if isinstance(turn_data, dict)
-                        else getattr(turn_data, "confidence", 0.0)
-                    )
-                    if transcript:
-                        transcript_parts.append(
-                            f"Turn {turn_num} (conf: {confidence:.2f}): {transcript}",
+                # Get all transcripts from the conversation context
+                conversation_context = conversation_service_with_db.get_conversation(session_id)
+                all_transcripts = ""
+                if conversation_context and hasattr(conversation_context, "transcript_history"):
+                    # Combine all transcripts with turn numbers
+                    transcript_parts = []
+                    for turn_data in conversation_context.transcript_history:
+                        turn_num = (
+                            turn_data.get("turn")
+                            if isinstance(turn_data, dict)
+                            else getattr(turn_data, "turn", "N/A")
                         )
-                all_transcripts = "\n\n".join(transcript_parts)
-            else:
-                # Fallback to final transcript if history not available
-                all_transcripts = transcription_result.text
+                        transcript = (
+                            turn_data.get("transcript")
+                            if isinstance(turn_data, dict)
+                            else getattr(turn_data, "transcript", "")
+                        )
+                        confidence = (
+                            turn_data.get("confidence")
+                            if isinstance(turn_data, dict)
+                            else getattr(turn_data, "confidence", 0.0)
+                        )
+                        if transcript:
+                            transcript_parts.append(
+                                f"Turn {turn_num} (conf: {confidence:.2f}): {transcript}",
+                            )
+                    all_transcripts = "\n\n".join(transcript_parts)
+                else:
+                    # Fallback to final transcript if history not available
+                    all_transcripts = transcription_result.text
 
-            # Get database session for saving
-            async with sessionmanager.get_session() as db_session:
+                    # Save activity entry to respective table
+                from typing import Any
+
                 from fitness_tracking.repositories.cricket_repository import (
                     CricketCoachingRepository,
                     CricketMatchRepository,
@@ -734,7 +737,7 @@ async def handle_complete_audio_processing(session_id: str) -> None:
                 )
                 from fitness_tracking.repositories.fitness_repository import FitnessRepository
 
-                saved_entry = None
+                saved_entry: Any = None
                 if entry_type == "fitness":
                     fitness_repo = FitnessRepository(db_session)
                     saved_entry = await fitness_repo.create_from_voice_data(
@@ -779,45 +782,54 @@ async def handle_complete_audio_processing(session_id: str) -> None:
                         processing_duration=processing_duration,
                     )
 
-            # Send conversation completed message
-            result_message = WebSocketMessage(
-                type="conversation_completed",
-                session_id=session_id,
-                data={
-                    "status": "success",
-                    "entry_type": entry_type,
-                    "structured_data": structured_data,
-                    "saved_entry_id": saved_entry.id if saved_entry else None,
-                    "audio_file": audio_save_result.get("filename"),
-                    "total_turns": conversation_result.total_turns,
-                    "data_quality_score": conversation_result.data_quality_score,
-                    "conversation_efficiency": conversation_result.conversation_efficiency,
-                    "processing_time": processing_duration,
-                    "database_saved": saved_entry is not None,
-                    "user_id": user_id,
-                    "message": f"Great! I've saved your {entry_type.replace('_', ' ')} entry with {len(structured_data)} data points collected over {conversation_result.total_turns} turns.",
-                },
-            )
-            await connection_manager.send_message(result_message, session_id)
+                # **NEW**: Update conversation with related entry information
+                if saved_entry and conversation_service_with_db.conversation_repo:
+                    await conversation_service_with_db.conversation_repo.complete_conversation(
+                        session_id=session_id,
+                        result=conversation_result,
+                        related_entry_id=saved_entry.id,
+                        related_entry_type=entry_type,
+                    )
 
-            logger.info(
-                "✅ Conversation completed for session %s: %d turns, %.2f quality, %.2f efficiency",
-                session_id,
-                conversation_result.total_turns,
-                conversation_result.data_quality_score,
-                conversation_result.conversation_efficiency,
-            )
+                # Send conversation completed message
+                result_message = WebSocketMessage(
+                    type="conversation_completed",
+                    session_id=session_id,
+                    data={
+                        "status": "success",
+                        "entry_type": entry_type,
+                        "structured_data": structured_data,
+                        "saved_entry_id": saved_entry.id if saved_entry else None,
+                        "audio_file": audio_save_result.get("filename"),
+                        "total_turns": conversation_result.total_turns,
+                        "data_quality_score": conversation_result.data_quality_score,
+                        "conversation_efficiency": conversation_result.conversation_efficiency,
+                        "processing_time": processing_duration,
+                        "database_saved": saved_entry is not None,
+                        "user_id": user_id,
+                        "message": f"Great! I've saved your {entry_type.replace('_', ' ')} entry with {len(structured_data)} data points collected over {conversation_result.total_turns} turns.",
+                    },
+                )
+                await connection_manager.send_message(result_message, session_id)
 
-        else:
-            # Error case - something went wrong
-            error_message = WebSocketMessage(
-                type="error",
-                session_id=session_id,
-                error="conversation_analysis_failed",
-                message=f"Conversation analysis failed: {conversation_analysis.reasoning}",
-            )
-            await connection_manager.send_message(error_message, session_id)
-            conversation_service.cleanup_session(session_id)
+                logger.info(
+                    "✅ Conversation completed for session %s: %d turns, %.2f quality, %.2f efficiency",
+                    session_id,
+                    conversation_result.total_turns,
+                    conversation_result.data_quality_score,
+                    conversation_result.conversation_efficiency,
+                )
+
+            else:
+                # Error case - something went wrong
+                error_message = WebSocketMessage(
+                    type="error",
+                    session_id=session_id,
+                    error="conversation_analysis_failed",
+                    message=f"Conversation analysis failed: {conversation_analysis.reasoning}",
+                )
+                await connection_manager.send_message(error_message, session_id)
+                conversation_service_with_db.cleanup_session(session_id)
 
         # Clear the audio buffer after processing
         connection_manager.clear_audio_buffer(session_id)
@@ -833,7 +845,8 @@ async def handle_complete_audio_processing(session_id: str) -> None:
         await connection_manager.send_message(error_message, session_id)
         # Clean up on error
         connection_manager.clear_audio_buffer(session_id)
-        conversation_service.cleanup_session(session_id)
+        if "conversation_service_with_db" in locals():
+            conversation_service_with_db.cleanup_session(session_id)
 
 
 @app.get("/api/entries/fitness")
@@ -1124,6 +1137,213 @@ async def get_user_dashboard(
         raise HTTPException(
             status_code=500,
             detail=f"Failed to retrieve dashboard data: {e}",
+        ) from e
+
+
+# **NEW**: Conversation Analytics Endpoints
+
+
+@app.get("/api/conversations/analytics")
+async def get_conversation_analytics(
+    user_id: str = "demo_user",
+    days_back: int = 30,
+    session: AsyncSession = Depends(get_database_session),
+) -> SuccessResponse:
+    """Get comprehensive conversation analytics for a user."""
+    try:
+        from voice_processing.repositories.conversation_repository import ConversationRepository
+
+        conversation_repo = ConversationRepository(session)
+        analytics = await conversation_repo.get_conversation_analytics(
+            user_id=user_id,
+            days=days_back,
+        )
+
+        return SuccessResponse(
+            message="Conversation analytics retrieved successfully",
+            data={
+                "analytics": analytics,
+                "user_id": user_id,
+                "period_days": days_back,
+                "generated_at": datetime.now(UTC).isoformat(),
+            },
+        )
+    except Exception as e:
+        logger.exception("Failed to get conversation analytics")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to retrieve conversation analytics: {e}",
+        ) from e
+
+
+@app.get("/api/conversations/{session_id}")
+async def get_conversation_details(
+    session_id: str,
+    session: AsyncSession = Depends(get_database_session),
+) -> SuccessResponse:
+    """Get detailed conversation history with all turns."""
+    try:
+        from voice_processing.repositories.conversation_repository import ConversationRepository
+
+        conversation_repo = ConversationRepository(session)
+        conversation = await conversation_repo.get_conversation_by_session(session_id)
+
+        if not conversation:
+            raise HTTPException(status_code=404, detail="Conversation not found")
+
+        return SuccessResponse(
+            message="Conversation details retrieved successfully",
+            data={
+                "conversation": {
+                    "id": conversation.id,
+                    "session_id": conversation.session_id,
+                    "user_id": conversation.user_id,
+                    "activity_type": conversation.activity_type,
+                    "state": conversation.state,
+                    "total_turns": conversation.total_turns,
+                    "completion_status": conversation.completion_status,
+                    "data_quality_score": conversation.data_quality_score,
+                    "conversation_efficiency": conversation.conversation_efficiency,
+                    "final_data": conversation.final_data,
+                    "started_at": conversation.started_at.isoformat(),
+                    "completed_at": conversation.completed_at.isoformat()
+                    if conversation.completed_at
+                    else None,
+                    "total_duration_seconds": conversation.total_duration_seconds,
+                    "related_entry_id": conversation.related_entry_id,
+                    "related_entry_type": conversation.related_entry_type,
+                },
+            },
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Failed to get conversation details")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to retrieve conversation details: {e}",
+        ) from e
+
+
+@app.get("/api/conversations")
+async def list_user_conversations(
+    user_id: str = "demo_user",
+    limit: int = 50,
+    offset: int = 0,
+    session: AsyncSession = Depends(get_database_session),
+) -> SuccessResponse:
+    """List conversations for a user with pagination."""
+    try:
+        from voice_processing.repositories.conversation_repository import ConversationRepository
+
+        conversation_repo = ConversationRepository(session)
+        conversations = await conversation_repo.get_user_conversations(
+            user_id=user_id,
+            limit=limit,
+            offset=offset,
+        )
+
+        conversation_list = []
+        for conv in conversations:
+            conversation_list.append(
+                {
+                    "id": conv.id,
+                    "session_id": conv.session_id,
+                    "activity_type": conv.activity_type,
+                    "state": conv.state,
+                    "total_turns": conv.total_turns,
+                    "completion_status": conv.completion_status,
+                    "data_quality_score": conv.data_quality_score,
+                    "conversation_efficiency": conv.conversation_efficiency,
+                    "started_at": conv.started_at.isoformat(),
+                    "completed_at": conv.completed_at.isoformat() if conv.completed_at else None,
+                    "related_entry_id": conv.related_entry_id,
+                    "related_entry_type": conv.related_entry_type,
+                },
+            )
+
+        return SuccessResponse(
+            message="User conversations retrieved successfully",
+            data={
+                "conversations": conversation_list,
+                "total_count": len(conversation_list),
+                "user_id": user_id,
+                "pagination": {
+                    "limit": limit,
+                    "offset": offset,
+                    "has_more": len(conversation_list) == limit,
+                },
+            },
+        )
+    except Exception as e:
+        logger.exception("Failed to list user conversations")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to retrieve user conversations: {e}",
+        ) from e
+
+
+@app.get("/api/conversations/insights")
+async def get_conversation_insights(
+    user_id: str = "demo_user",
+    activity_type: str | None = None,
+    days_back: int = 30,
+    session: AsyncSession = Depends(get_database_session),
+) -> SuccessResponse:
+    """Get conversation insights and question effectiveness."""
+    try:
+        from database.models.conversation import ActivityType as ModelActivityType
+        from voice_processing.repositories.conversation_repository import ConversationRepository
+
+        conversation_repo = ConversationRepository(session)
+
+        # Get basic analytics
+        analytics = await conversation_repo.get_conversation_analytics(
+            user_id=user_id,
+            days_back=days_back,
+        )
+
+        # Get most asked questions
+        activity_filter = None
+        if activity_type:
+            try:
+                activity_filter = ModelActivityType(activity_type)
+            except ValueError:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Invalid activity type: {activity_type}",
+                )
+
+        # Note: This would need to be implemented in the repository
+        # most_asked_questions = await conversation_repo.get_most_asked_questions(
+        #     activity_type=activity_filter,
+        #     limit=10
+        # )
+
+        return SuccessResponse(
+            message="Conversation insights retrieved successfully",
+            data={
+                "analytics": analytics,
+                "insights": {
+                    "most_effective_questions": [],  # Placeholder
+                    "common_missing_fields": [],  # Placeholder
+                    "conversation_patterns": {},  # Placeholder
+                },
+                "filters": {
+                    "user_id": user_id,
+                    "activity_type": activity_type,
+                    "period_days": days_back,
+                },
+                "generated_at": datetime.now(UTC).isoformat(),
+            },
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Failed to get conversation insights")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to retrieve conversation insights: {e}",
         ) from e
 
 
