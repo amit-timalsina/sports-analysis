@@ -27,6 +27,7 @@ services:
     volumes:
       - ./audio_storage:/app/audio_storage
       - ./static:/app/static
+      - .:/app 
     ports:
       - "8020:8000"
     environment:

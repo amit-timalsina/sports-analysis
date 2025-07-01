@@ -6,3 +6,5 @@ coverage.xml
 *.log
 audio_storage/
 .vscode/
+.dockerignore
+myenv/
