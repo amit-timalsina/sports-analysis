@@ -4,6 +4,7 @@ import json
 import logging
 from datetime import UTC, datetime
 from typing import Any
+from uuid import UUID
 
 from fastapi import WebSocket, WebSocketDisconnect
 
@@ -12,6 +13,16 @@ from common.exceptions import AppError
 from voice_processing.schemas.processing import WebSocketMessage
 
 logger = logging.getLogger(__name__)
+
+
+class UUIDEncoder(json.JSONEncoder):
+    """JSON encoder that handles UUID objects."""
+
+    def default(self, obj: Any) -> Any:
+        """Convert UUID objects to strings."""
+        if isinstance(obj, UUID):
+            return str(obj)
+        return super().default(obj)
 
 
 class WebSocketError(AppError):
@@ -102,7 +113,9 @@ class ConnectionManager:
         if session_id in self.active_connections:
             websocket = self.active_connections[session_id]
             try:
-                await websocket.send_json(message.model_dump())
+                # Use custom encoder for UUID objects
+                message_data = message.model_dump()
+                await websocket.send_text(json.dumps(message_data, cls=UUIDEncoder))
 
                 # Update metadata
                 if session_id in self.session_metadata:
@@ -171,7 +184,9 @@ class ConnectionManager:
         disconnected_sessions = []
         for session_id, websocket in self.active_connections.items():
             try:
-                await websocket.send_json(message.model_dump())
+                # Use custom encoder for UUID objects
+                message_data = message.model_dump()
+                await websocket.send_text(json.dumps(message_data, cls=UUIDEncoder))
 
                 # Update metadata
                 if session_id in self.session_metadata:
@@ -303,17 +318,18 @@ class ConnectionManager:
         logger.info("Cleaning up %d WebSocket connections", len(self.active_connections))
 
         # Send goodbye message to all connections
-        goodbye_message = WebSocketMessage(
-            type="connection_closed",
-            message="Server is shutting down",
-        )
-
         for session_id, websocket in self.active_connections.items():
             try:
-                await websocket.send_json(goodbye_message.model_dump())
+                goodbye_message = WebSocketMessage(
+                    type="connection_closed",
+                    message="Server is shutting down",
+                    session_id=session_id,
+                )
+                message_data = goodbye_message.model_dump()
+                await websocket.send_text(json.dumps(message_data, cls=UUIDEncoder))
                 await websocket.close(code=1001, reason="Server shutdown")
-            except Exception as e:
-                logger.debug("Error during cleanup for session %s: %s", session_id, e)
+            except Exception:
+                logger.exception("Error during cleanup for session %s", session_id)
 
         # Clear all connections
         self.active_connections.clear()

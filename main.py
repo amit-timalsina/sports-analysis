@@ -246,7 +246,11 @@ async def get_session_audio_files(session_id: str) -> SuccessResponse:
 
 @app.websocket("/ws/voice/{session_id}")
 @observe(capture_input=False, capture_output=False)
-async def voice_websocket_endpoint(websocket: WebSocket, session_id: str) -> None:
+async def voice_websocket_endpoint(
+    websocket: WebSocket,
+    session_id: str,
+    db: Annotated[AsyncSession, Depends(get_session)],
+) -> None:
     """
     Modern WebSocket endpoint for real-time voice processing.
 
@@ -282,7 +286,8 @@ async def voice_websocket_endpoint(websocket: WebSocket, session_id: str) -> Non
                 },
                 "recording_instructions": {
                     "chunk_accumulation": True,
-                    "completion_signal": "Send 'recording_complete' message to process accumulated audio",
+                    "completion_signal": "Send 'recording_complete' message to process "
+                    "accumulated audio",
                 },
             },
         )
@@ -299,7 +304,7 @@ async def voice_websocket_endpoint(websocket: WebSocket, session_id: str) -> Non
 
                 # Handle different message types
                 if "text" in data:
-                    await handle_text_message(session_id, data["text"])
+                    await handle_text_message(session_id, data["text"], db)
                 elif "bytes" in data:
                     # Accumulate audio chunks instead of processing immediately
                     await handle_audio_chunk(session_id, data["bytes"])
@@ -326,7 +331,7 @@ async def voice_websocket_endpoint(websocket: WebSocket, session_id: str) -> Non
         connection_manager.disconnect(session_id)
 
 
-async def handle_text_message(session_id: str, message: str) -> None:
+async def handle_text_message(session_id: str, message: str, db: AsyncSession) -> None:
     """Handle text messages from WebSocket clients."""
     try:
         message_data = json.loads(message)
@@ -373,7 +378,7 @@ async def handle_text_message(session_id: str, message: str) -> None:
         elif message_type == "recording_complete":
             # Process the accumulated audio when recording is complete
             logger.info("Received recording_complete signal for session %s", session_id)
-            await handle_complete_audio_processing(session_id)
+            await handle_complete_audio_processing(session_id, db)
 
         else:
             logger.warning("Unknown text message type: %s", message_type)
@@ -458,7 +463,7 @@ async def handle_audio_chunk(session_id: str, audio_chunk: bytes) -> None:
 
 
 @observe(capture_input=True, capture_output=False)
-async def handle_complete_audio_processing(session_id: str) -> None:
+async def handle_complete_audio_processing(session_id: str, db: AsyncSession) -> None:
     """Process complete accumulated audio with multi-turn conversation support."""
     try:
         start_time = datetime.now(UTC)
@@ -560,7 +565,6 @@ async def handle_complete_audio_processing(session_id: str) -> None:
 
             # Use completion service to persist all data
             try:
-                db = await anext(get_session())
                 completion_service = ConversationCompletionService(
                     conversation_repo=ConversationRepository(db),
                     message_repo=ConversationMessageRepository(db),

@@ -1,7 +1,7 @@
 """Test cases for voice processing repositories."""
 
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -11,10 +11,8 @@ from voice_processing.models.conversation import (
     Conversation,
     ConversationAnalytics,
     ConversationMessage,
-    ConversationState,
     ConversationTurn,
     QuestionContext,
-    ResolutionStatus,
 )
 from voice_processing.repositories import (
     ConversationAnalyticsRepository,
@@ -30,6 +28,13 @@ from voice_processing.schemas.conversation import (
     ConversationTurnRead,
     QuestionContextRead,
 )
+from voice_processing.schemas.conversation_detail_enums import (
+    ActivityType,
+    ConversationStage,
+    MessageType,
+    QuestionType,
+)
+from voice_processing.schemas.conversation_enums import ConversationState, ResolutionStatus
 
 
 @pytest.fixture
@@ -79,72 +84,140 @@ def analytics_repository(mock_session):
 @pytest.fixture
 def sample_conversation():
     """Create a sample conversation."""
+    now = datetime.now(UTC)
     return Conversation(
         id=uuid.uuid4(),
         user_id="user123",
         session_id="session123",
-        activity_type="fitness",
+        activity_type=ActivityType.FITNESS,
         state=ConversationState.STARTED,
-        created_at=datetime.utcnow(),
-        updated_at=datetime.utcnow(),
+        stage=ConversationStage.INITIAL_INPUT,
+        current_data={},
+        data_confidence={},
+        missing_fields=[],
+        validation_errors={},
+        pending_questions=[],
+        question_attempts={},
+        total_turns=0,
+        total_messages=0,
+        completion_status="incomplete",
+        final_data={},
+        started_at=now,
+        last_activity_at=now,
+        completed_at=None,
+        total_duration_seconds=None,
+        activity_entry_id=None,
+        activity_entry_type=None,
+        created_at=now,
+        updated_at=now,
     )
 
 
 @pytest.fixture
 def sample_message():
     """Create a sample conversation message."""
+    now = datetime.now(UTC)
     return ConversationMessage(
         id=uuid.uuid4(),
-        conversation_id=1,
-        turn_id=1,
-        role="user",
-        content="Test message",
+        conversation_id=uuid.uuid4(),
+        message_type=MessageType.USER_INPUT,
         sequence_number=1,
-        timestamp=datetime.utcnow(),
-        created_at=datetime.utcnow(),
-        updated_at=datetime.utcnow(),
+        content="Test message",
+        turn_id=None,
+        parent_message_id=None,
+        raw_transcript=None,
+        transcript_confidence=None,
+        processing_duration=None,
+        ai_model_used=None,
+        ai_temperature=None,
+        ai_tokens_used=None,
+        extracted_data={},
+        extraction_confidence=None,
+        message_timestamp=now,
+        created_at=now,
+        updated_at=now,
     )
 
 
 @pytest.fixture
 def sample_turn():
     """Create a sample conversation turn."""
+    now = datetime.now(UTC)
     return ConversationTurn(
         id=uuid.uuid4(),
-        conversation_id=1,
+        conversation_id=uuid.uuid4(),
         turn_number=1,
-        state=ConversationState.STARTED,
-        created_at=datetime.utcnow(),
-        updated_at=datetime.utcnow(),
+        data_extracted_this_turn={},
+        questions_resolved=[],
+        new_questions_raised=[],
+        turn_effectiveness_score=None,
+        data_completeness_after_turn=None,
+        turn_strategy=None,
+        turn_started_at=now,
+        turn_completed_at=None,
+        turn_duration_seconds=None,
+        created_at=now,
+        updated_at=now,
     )
 
 
 @pytest.fixture
 def sample_question_context():
     """Create a sample question context."""
+    now = datetime.now(UTC)
     return QuestionContext(
         id=uuid.uuid4(),
-        conversation_id=1,
-        question="What is your name?",
-        context_type="personal",
+        conversation_id=uuid.uuid4(),
+        target_field="name",
+        question_text="What is your name?",
+        question_type=QuestionType.REQUIRED,
         asked_at_turn=1,
+        attempts_count=1,
+        max_attempts=3,
         resolution_status=ResolutionStatus.PENDING,
-        created_at=datetime.utcnow(),
-        updated_at=datetime.utcnow(),
+        question_strategy="direct",
+        context_data={},
+        first_asked_at=now,
+        resolved_at_turn=None,
+        resolved_with_confidence=None,
+        final_answer=None,
+        resolved_at=None,
+        created_at=now,
+        updated_at=now,
     )
 
 
 @pytest.fixture
 def sample_analytics():
     """Create a sample conversation analytics."""
+    now = datetime.now(UTC)
     return ConversationAnalytics(
         id=uuid.uuid4(),
         user_id="user123",
-        date="2024-01-01",
+        date=datetime.now(UTC),
         total_conversations=10,
         completed_conversations=8,
-        created_at=datetime.utcnow(),
-        updated_at=datetime.utcnow(),
+        abandoned_conversations=1,
+        error_conversations=1,
+        average_turns_per_conversation=None,
+        average_messages_per_conversation=None,
+        average_conversation_duration=None,
+        median_conversation_duration=None,
+        average_data_quality=None,
+        average_efficiency=None,
+        average_user_satisfaction=None,
+        activity_breakdown={},
+        completion_rate_by_activity={},
+        most_asked_questions=[],
+        most_problematic_fields=[],
+        question_success_rates={},
+        average_time_per_stage={},
+        stage_completion_rates={},
+        average_ai_response_time=None,
+        ai_model_usage={},
+        total_ai_tokens_used=None,
+        created_at=now,
+        updated_at=now,
     )
 
 
@@ -218,7 +291,7 @@ class TestConversationRepository:
     ):
         """Test reading conversations by activity type."""
         # Arrange
-        activity_type = "fitness"
+        activity_type = ActivityType.FITNESS
         conversations = [sample_conversation]
 
         # Mock the read_multi_by_filter method
@@ -254,7 +327,7 @@ class TestConversationMessageRepository:
     ):
         """Test reading messages by conversation ID."""
         # Arrange
-        conversation_id = 1
+        conversation_id = uuid.uuid4()
         messages = [sample_message]
 
         # Mock the read_multi_by_filter method
@@ -283,7 +356,7 @@ class TestConversationMessageRepository:
     ):
         """Test reading messages by turn ID."""
         # Arrange
-        turn_id = 1
+        turn_id = uuid.uuid4()
         messages = [sample_message]
 
         # Mock the read_multi_by_filter method
@@ -316,7 +389,7 @@ class TestConversationTurnRepository:
     ):
         """Test reading turns by conversation ID."""
         # Arrange
-        conversation_id = 1
+        conversation_id = uuid.uuid4()
         turns = [sample_turn]
 
         # Mock the read_multi_by_filter method
@@ -345,7 +418,7 @@ class TestConversationTurnRepository:
     ):
         """Test getting the latest turn for a conversation."""
         # Arrange
-        conversation_id = 1
+        conversation_id = uuid.uuid4()
         mock_result = MagicMock()
         mock_result.scalar_one_or_none.return_value = sample_turn
         mock_session.execute = AsyncMock(return_value=mock_result)
@@ -381,7 +454,7 @@ class TestQuestionContextRepository:
     ):
         """Test reading question contexts by conversation ID."""
         # Arrange
-        conversation_id = 1
+        conversation_id = uuid.uuid4()
         contexts = [sample_question_context]
 
         # Mock the read_multi_by_filter method
@@ -410,7 +483,7 @@ class TestQuestionContextRepository:
     ):
         """Test reading pending questions for a conversation."""
         # Arrange
-        conversation_id = 1
+        conversation_id = uuid.uuid4()
         contexts = [sample_question_context]
 
         # Mock the read_multi_by_filter method

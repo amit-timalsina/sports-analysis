@@ -37,14 +37,27 @@ from voice_processing.schemas.conversation import (
 logger = logging.getLogger(__name__)
 
 
+def map_fitness_type_to_exercise_type(fitness_type: str) -> ExerciseType:
+    """Map specific fitness activities to general exercise types."""
+    mapping = {
+        "running": ExerciseType.CARDIO,
+        "cardio": ExerciseType.CARDIO,
+        "strength_training": ExerciseType.STRENGTH,
+        "cricket_specific": ExerciseType.SPORTS,
+        "flexibility": ExerciseType.FLEXIBILITY,
+        "general_fitness": ExerciseType.OTHER,
+    }
+    return mapping.get(fitness_type.lower(), ExerciseType.OTHER)
+
+
 class CompletionResult:
     """Result of completing and persisting a conversation."""
 
     def __init__(
         self,
-        conversation_id: int,
-        activity_id: int,
-        turns: list[int],
+        conversation_id: UUID,
+        activity_id: UUID,
+        turns: list[UUID],
     ) -> None:
         """Initialize completion result."""
         self.conversation_id = conversation_id
@@ -81,28 +94,27 @@ class ConversationCompletionService:
         metadata: dict[str, Any],
     ) -> CompletionResult:
         """Complete conversation and persist all related data atomically."""
-        async with self.conversation_repo.session.begin():
-            # 1. Save base conversation
-            conversation = await self._save_conversation(conversation_result)
+        # 1. Save base conversation
+        conversation = await self._save_conversation(conversation_result)
 
-            # 2. Save turns and messages
-            turns = await self._save_conversation_turns(
-                int(conversation.id),  # Convert UUID to int
-                transcript_history,
-            )
+        # 2. Save turns and messages
+        turns = await self._save_conversation_turns(
+            conversation.id,  # Pass UUID directly
+            transcript_history,
+        )
 
-            # 3. Save activity-specific entry
-            entry = await self._save_activity_entry(
-                int(conversation.id),  # Convert UUID to int
-                conversation_result,
-                metadata,
-            )
+        # 3. Save activity-specific entry
+        entry = await self._save_activity_entry(
+            conversation.id,  # Pass UUID directly
+            conversation_result,
+            metadata,
+        )
 
-            return CompletionResult(
-                conversation_id=int(conversation.id),  # Convert UUID to int
-                activity_id=int(entry.id),  # Convert UUID to int
-                turns=[int(t.id) for t in turns],  # Convert UUIDs to ints
-            )
+        return CompletionResult(
+            conversation_id=conversation.id,  # Keep as UUID
+            activity_id=entry.id,  # Keep as UUID
+            turns=[t.id for t in turns],  # Keep as UUIDs
+        )
 
     async def _save_conversation(self, result: ConversationResult) -> ConversationRead:
         """Save the conversation record."""
@@ -128,7 +140,7 @@ class ConversationCompletionService:
 
     async def _save_conversation_turns(
         self,
-        conversation_id: int,
+        conversation_id: UUID,  # Change type to UUID
         transcript_history: list[dict[str, Any]],
     ) -> list[ConversationTurnRead]:
         """Save all turns and their messages."""
@@ -136,7 +148,7 @@ class ConversationCompletionService:
         for turn in transcript_history:
             # Create turn
             turn_data = ConversationTurnCreate(
-                conversation_id=conversation_id,
+                conversation_id=conversation_id,  # Use UUID directly
                 turn_number=turn["turn"],
                 data_extracted_this_turn=turn.get("extracted_data", {}),
                 turn_effectiveness_score=None,  # Optional score
@@ -146,8 +158,8 @@ class ConversationCompletionService:
 
             # Create message for transcript
             msg_data = ConversationMessageCreate(
-                conversation_id=conversation_id,
-                turn_id=int(saved_turn.id),  # Convert UUID to int
+                conversation_id=conversation_id,  # Use UUID directly
+                turn_id=saved_turn.id,  # Use UUID directly
                 message_type=MessageType.USER_INPUT,  # Enum value
                 sequence_number=turn["turn"],
                 content=turn["transcript"],
@@ -162,7 +174,7 @@ class ConversationCompletionService:
 
     async def _save_activity_entry(
         self,
-        conversation_id: int,
+        conversation_id: UUID,  # Change type to UUID
         result: ConversationResult,
         metadata: dict[str, Any],
     ) -> FitnessEntryRead | CricketMatchEntry | CricketCoachingEntry:
@@ -183,28 +195,29 @@ class ConversationCompletionService:
 
     async def _save_fitness_entry(
         self,
-        conversation_id: int,
+        conversation_id: UUID,  # Change type to UUID
         result: ConversationResult,
     ) -> FitnessEntryRead:
         """Save fitness-specific entry."""
         # Extract required fields with validation
         try:
+            fitness_type = result.final_data["fitness_type"]
             entry = FitnessEntryCreate(
                 user_id=result.final_data["user_id"],
                 session_id=result.session_id,
-                conversation_id=UUID(int=conversation_id),  # Convert int to UUID
+                conversation_id=conversation_id,  # Use UUID directly
                 entry_type=EntryType.FITNESS,
                 original_transcript=result.final_data.get("original_transcript", ""),
                 overall_confidence_score=result.data_quality_score,
                 # Required timestamp
                 activity_timestamp=datetime.now(UTC),
                 # Map conversation fields to entry fields
-                exercise_type=ExerciseType(result.final_data["fitness_type"]),
-                exercise_name=result.final_data["fitness_type"],
+                exercise_type=map_fitness_type_to_exercise_type(fitness_type),
+                exercise_name=fitness_type,
                 duration_minutes=result.final_data["duration_minutes"],
                 intensity=IntensityLevel(result.final_data["intensity"]),
                 mental_state=result.final_data["mental_state"],
-                energy_level=result.final_data["energy_level"],
+                energy_level=result.final_data.get("energy_level"),  # Make optional
                 # Required fields with defaults
                 calories_burned=None,  # Optional in schema
                 # More required fields with defaults
@@ -241,7 +254,7 @@ class ConversationCompletionService:
 
     async def _save_cricket_match(
         self,
-        conversation_id: int,
+        conversation_id: UUID,
         result: ConversationResult,
     ) -> CricketMatchEntry:
         """Save cricket match entry."""
@@ -251,7 +264,7 @@ class ConversationCompletionService:
 
     async def _save_cricket_coaching(
         self,
-        conversation_id: int,
+        conversation_id: UUID,
         result: ConversationResult,
     ) -> CricketCoachingEntry:
         """Save cricket coaching entry."""
@@ -261,7 +274,7 @@ class ConversationCompletionService:
 
     async def _save_rest_day(
         self,
-        conversation_id: int,
+        conversation_id: UUID,
         result: ConversationResult,
     ) -> None:
         """Save rest day entry."""

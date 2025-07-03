@@ -1,9 +1,14 @@
 """Tests for fitness tracking schemas."""
 
+import uuid
+
 import pytest
 from pydantic import ValidationError
 
+from common.schemas.entry_type import EntryType
+from fitness_tracking.schemas.exercise_type import ExerciseType
 from fitness_tracking.schemas.fitness import FitnessDataExtraction, FitnessEntryCreate
+from fitness_tracking.schemas.intensity_level import IntensityLevel
 
 
 class TestFitnessEntryCreate:
@@ -12,84 +17,111 @@ class TestFitnessEntryCreate:
     def test_valid_fitness_entry(self):
         """Test creating a valid fitness entry."""
         entry_data = {
-            "type": "running",
+            "user_id": "user123",
+            "session_id": "session123",
+            "conversation_id": uuid.uuid4(),
+            "entry_type": EntryType.FITNESS,
+            "original_transcript": "I went for a run",
+            "overall_confidence_score": 0.95,
+            "mental_state": "good",
+            "exercise_type": ExerciseType.CARDIO,
+            "exercise_name": "Running",
             "duration_minutes": 30,
             "distance_km": 5.0,
-            "intensity": "medium",
-            "details": "Morning run in the park",
-            "mental_state": "good",
-            "energy_level": 4,
+            "intensity": IntensityLevel.MODERATE,
             "heart_rate_avg": 140,
             "heart_rate_max": 160,
             "location": "Central Park",
+            "energy_level": 4,
         }
 
         entry = FitnessEntryCreate(**entry_data)
 
-        assert entry.type == "running"
+        assert entry.exercise_type == ExerciseType.CARDIO
         assert entry.duration_minutes == 30
         assert entry.distance_km == 5.0
-        assert entry.intensity == "medium"
+        assert entry.intensity == IntensityLevel.MODERATE
         assert entry.energy_level == 4
 
     def test_minimum_required_fields(self):
         """Test creating entry with only required fields."""
         entry_data = {
-            "type": "gym",
-            "duration_minutes": 45,
-            "intensity": "high",
-            "details": "Strength training session",
+            "user_id": "user123",
+            "session_id": "session123",
+            "conversation_id": uuid.uuid4(),
+            "entry_type": EntryType.FITNESS,
+            "original_transcript": "I did strength training",
+            "overall_confidence_score": 0.9,
             "mental_state": "excellent",
-            "energy_level": 5,
+            "exercise_type": ExerciseType.STRENGTH,
+            "exercise_name": "Weight Training",
+            "duration_minutes": 45,
+            "intensity": IntensityLevel.HIGH,
         }
 
         entry = FitnessEntryCreate(**entry_data)
 
-        assert entry.type == "gym"
+        assert entry.exercise_type == ExerciseType.STRENGTH
         assert entry.distance_km is None
         assert entry.calories_burned is None
 
     def test_invalid_duration_too_short(self):
         """Test validation fails for duration too short."""
         entry_data = {
-            "type": "running",
-            "duration_minutes": 0,  # Invalid: too short
-            "intensity": "medium",
-            "details": "Test run",
+            "user_id": "user123",
+            "session_id": "session123",
+            "conversation_id": uuid.uuid4(),
+            "entry_type": EntryType.FITNESS,
+            "original_transcript": "Quick run",
+            "overall_confidence_score": 0.9,
             "mental_state": "good",
-            "energy_level": 3,
+            "exercise_type": ExerciseType.CARDIO,
+            "exercise_name": "Running",
+            "duration_minutes": 0,  # Invalid: too short
+            "intensity": IntensityLevel.MODERATE,
         }
 
         with pytest.raises(ValidationError) as exc_info:
             FitnessEntryCreate(**entry_data)
 
-        assert "greater than or equal to 1" in str(exc_info.value)
+        assert "Input should be greater than 0" in str(exc_info.value)
 
     def test_invalid_energy_level_out_of_range(self):
         """Test validation fails for energy level out of range."""
         entry_data = {
-            "type": "gym",
-            "duration_minutes": 30,
-            "intensity": "low",
-            "details": "Light workout",
+            "user_id": "user123",
+            "session_id": "session123",
+            "conversation_id": uuid.uuid4(),
+            "entry_type": EntryType.FITNESS,
+            "original_transcript": "Light workout",
+            "overall_confidence_score": 0.9,
             "mental_state": "okay",
-            "energy_level": 6,  # Invalid: too high
+            "exercise_type": ExerciseType.STRENGTH,
+            "exercise_name": "Light Training",
+            "duration_minutes": 30,
+            "intensity": IntensityLevel.LOW,
+            "energy_level": 11,  # Invalid: too high
         }
 
         with pytest.raises(ValidationError) as exc_info:
             FitnessEntryCreate(**entry_data)
 
-        assert "less than or equal to 5" in str(exc_info.value)
+        assert "Input should be less than or equal to 10" in str(exc_info.value)
 
     def test_heart_rate_consistency_validation(self):
         """Test heart rate consistency validation."""
         entry_data = {
-            "type": "cardio",
-            "duration_minutes": 45,
-            "intensity": "high",
-            "details": "Interval training",
+            "user_id": "user123",
+            "session_id": "session123",
+            "conversation_id": uuid.uuid4(),
+            "entry_type": EntryType.FITNESS,
+            "original_transcript": "Interval training",
+            "overall_confidence_score": 0.9,
             "mental_state": "good",
-            "energy_level": 4,
+            "exercise_type": ExerciseType.CARDIO,
+            "exercise_name": "HIIT",
+            "duration_minutes": 45,
+            "intensity": IntensityLevel.HIGH,
             "heart_rate_avg": 180,  # Invalid: higher than max
             "heart_rate_max": 160,
         }
@@ -97,23 +129,29 @@ class TestFitnessEntryCreate:
         with pytest.raises(ValidationError) as exc_info:
             FitnessEntryCreate(**entry_data)
 
-        assert "cannot be less than average" in str(exc_info.value)
+        assert "Maximum heart rate cannot be less than average heart rate" in str(exc_info.value)
 
     def test_cricket_specific_activity_type(self):
         """Test cricket-specific fitness activity."""
         entry_data = {
-            "type": "cricket_specific",
-            "duration_minutes": 60,
-            "intensity": "medium",
-            "details": "Wicket keeping practice with fitness drills",
+            "user_id": "user123",
+            "session_id": "session123",
+            "conversation_id": uuid.uuid4(),
+            "entry_type": EntryType.FITNESS,
+            "original_transcript": "Cricket practice",
+            "overall_confidence_score": 0.9,
             "mental_state": "excellent",
+            "exercise_type": ExerciseType.SPORTS,
+            "exercise_name": "Cricket Training",
+            "duration_minutes": 60,
+            "intensity": IntensityLevel.MODERATE,
             "energy_level": 4,
             "location": "Cricket ground",
         }
 
         entry = FitnessEntryCreate(**entry_data)
 
-        assert entry.type == "cricket_specific"
+        assert entry.exercise_type == ExerciseType.SPORTS
         assert entry.location == "Cricket ground"
 
 
@@ -125,7 +163,7 @@ class TestFitnessDataExtraction:
         extraction_data = {
             "fitness_type": "running",
             "duration_minutes": 25,
-            "intensity": "medium",
+            "intensity": "low",
             "details": "Easy pace run",
             "mental_state": "good",
             "energy_level": 3,

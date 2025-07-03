@@ -3,7 +3,7 @@
 from datetime import time
 from typing import Any, Literal
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from common.schemas import AppBaseModel, PrimaryKeyBase, TimestampBase
 from common.schemas.activity import ActivityEntryBase
@@ -93,6 +93,15 @@ class FitnessEntryCreate(FitnessEntryBase):
     validation_notes: str | None = Field(None, description="Validation notes")
     energy_level: int | None = Field(None, ge=1, le=10, description="Energy level 1-10")
     notes: str | None = Field(None, description="Additional notes")
+
+    @model_validator(mode="after")
+    def validate_heart_rates(self) -> "FitnessEntryCreate":
+        """Validate that max heart rate is greater than average heart rate."""
+        if self.heart_rate_avg is not None and self.heart_rate_max is not None:
+            if self.heart_rate_max < self.heart_rate_avg:
+                msg = "Maximum heart rate cannot be less than average heart rate"
+                raise ValueError(msg)
+        return self
 
 
 class FitnessEntryUpdate(AppBaseModel):

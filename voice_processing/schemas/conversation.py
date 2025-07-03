@@ -2,6 +2,7 @@
 
 from datetime import datetime
 from typing import Any
+from uuid import UUID
 
 from pydantic import Field
 
@@ -13,8 +14,6 @@ from voice_processing.schemas.conversation_detail_enums import (
     QuestionType,
 )
 from voice_processing.schemas.conversation_enums import ConversationState, ResolutionStatus
-
-# === Additional Service Schemas ===
 
 
 class DataCompleteness(AppBaseModel):
@@ -158,7 +157,7 @@ class ConversationUpdate(AppBaseModel):
     final_data: dict[str, Any] | None = None
     completed_at: datetime | None = None
     total_duration_seconds: float | None = None
-    activity_entry_id: int | None = None
+    activity_entry_id: UUID | None = None
     activity_entry_type: str | None = None
 
 
@@ -182,7 +181,7 @@ class ConversationRead(PrimaryKeyBase, TimestampBase, ConversationBase):
     completed_at: datetime | None
     last_activity_at: datetime
     total_duration_seconds: float | None
-    activity_entry_id: int | None
+    activity_entry_id: UUID | None
     activity_entry_type: str | None
 
 
@@ -192,7 +191,7 @@ class ConversationRead(PrimaryKeyBase, TimestampBase, ConversationBase):
 class ConversationMessageBase(AppBaseModel):
     """Base schema for conversation message data."""
 
-    conversation_id: int = Field(..., description="ID of the parent conversation")
+    conversation_id: UUID = Field(..., description="ID of the parent conversation")
     message_type: MessageType = Field(..., description="Type of message")
     sequence_number: int = Field(..., description="Sequential number within conversation")
     content: str = Field(..., description="Message content")
@@ -201,8 +200,8 @@ class ConversationMessageBase(AppBaseModel):
 class ConversationMessageCreate(ConversationMessageBase):
     """Schema for creating a conversation message."""
 
-    turn_id: int | None = None
-    parent_message_id: int | None = None
+    turn_id: UUID | None = None
+    parent_message_id: UUID | None = None
     raw_transcript: str | None = None
     transcript_confidence: float | None = Field(None, ge=0.0, le=1.0)
     processing_duration: float | None = None
@@ -216,8 +215,8 @@ class ConversationMessageCreate(ConversationMessageBase):
 class ConversationMessageRead(PrimaryKeyBase, TimestampBase, ConversationMessageBase):
     """Schema for reading conversation message data."""
 
-    turn_id: int | None
-    parent_message_id: int | None
+    turn_id: UUID | None
+    parent_message_id: UUID | None
     raw_transcript: str | None
     transcript_confidence: float | None
     processing_duration: float | None
@@ -235,7 +234,7 @@ class ConversationMessageRead(PrimaryKeyBase, TimestampBase, ConversationMessage
 class ConversationTurnBase(AppBaseModel):
     """Base schema for conversation turn data."""
 
-    conversation_id: int = Field(..., description="ID of the parent conversation")
+    conversation_id: UUID = Field(..., description="ID of the parent conversation")
     turn_number: int = Field(..., description="Turn number in the conversation")
 
 
@@ -270,7 +269,7 @@ class ConversationTurnRead(PrimaryKeyBase, TimestampBase, ConversationTurnBase):
 class QuestionContextBase(AppBaseModel):
     """Base schema for question context data."""
 
-    conversation_id: int = Field(..., description="ID of the parent conversation")
+    conversation_id: UUID = Field(..., description="ID of the parent conversation")
     target_field: str = Field(..., description="Field this question aims to collect")
     question_text: str = Field(..., description="The actual question text")
     question_type: QuestionType = Field(..., description="Type of question")
