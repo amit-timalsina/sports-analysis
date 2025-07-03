@@ -8,15 +8,12 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from common.exceptions import AppError
-from common.repositories.base_repository import BaseRepository
+from common.repositories.crud_repository import CRUDRepository
 from fitness_tracking.models.cricket import (
     CricketCoachingEntry,
     CricketMatchEntry,
-    CricketSessionType,
-    MatchType,
-    RestDayEntry,
-    RestType,
 )
+from fitness_tracking.models.fitness import RestDayEntry
 from fitness_tracking.schemas.cricket import (
     CricketAnalytics,
     CricketCoachingDataExtraction,
@@ -32,6 +29,11 @@ from fitness_tracking.schemas.cricket import (
     RestDayEntryRead,
     RestDayEntryUpdate,
 )
+from fitness_tracking.schemas.cricket_enums import (
+    CricketSessionType,
+    MatchFormat,
+    RestType,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -43,8 +45,50 @@ class CricketRepositoryError(AppError):
     detail = "Cricket repository operation failed"
 
 
+class CricketCoachingNotFoundError(AppError):
+    """Cricket coaching entry not found error."""
+
+    status_code = 404
+    detail = "Cricket coaching entry not found"
+
+
+class CricketCoachingCreationError(AppError):
+    """Cricket coaching entry creation error."""
+
+    status_code = 400
+    detail = "Failed to create cricket coaching entry"
+
+
+class CricketMatchNotFoundError(AppError):
+    """Cricket match entry not found error."""
+
+    status_code = 404
+    detail = "Cricket match entry not found"
+
+
+class CricketMatchCreationError(AppError):
+    """Cricket match entry creation error."""
+
+    status_code = 400
+    detail = "Failed to create cricket match entry"
+
+
+class RestDayNotFoundError(AppError):
+    """Rest day entry not found error."""
+
+    status_code = 404
+    detail = "Rest day entry not found"
+
+
+class RestDayCreationError(AppError):
+    """Rest day entry creation error."""
+
+    status_code = 400
+    detail = "Failed to create rest day entry"
+
+
 class CricketCoachingRepository(
-    BaseRepository[
+    CRUDRepository[
         CricketCoachingEntry,
         CricketCoachingEntryCreate,
         CricketCoachingEntryRead,
@@ -55,54 +99,69 @@ class CricketCoachingRepository(
 
     def __init__(self, session: AsyncSession) -> None:
         """Initialize cricket coaching repository."""
-        super().__init__(CricketCoachingEntry, session)
+        super().__init__(
+            model=CricketCoachingEntry,
+            create_schema=CricketCoachingEntryCreate,
+            read_schema=CricketCoachingEntryRead,
+            update_schema=CricketCoachingEntryUpdate,
+            session=session,
+            not_found_exception=CricketCoachingNotFoundError,
+            creation_exception=CricketCoachingCreationError,
+            user_filter=self._user_filter,
+        )
 
-    def _normalize_session_type(self, session_type: str) -> CricketSessionType:
-        """Normalize session type strings to valid CricketSessionType enum values."""
+    def _user_filter(self, user: Any) -> Any:
+        """Filter by user."""
+        if user:
+            return CricketCoachingEntry.user_id == user.id
+        return True
+
+    def _normalize_session_type(self, session_type: str) -> str:
+        """Normalize session type strings to valid values."""
         session_type_lower = session_type.lower().strip()
 
         # Mapping of common variations to valid enum values
         session_type_mapping = {
             # Batting variations
-            "batting": CricketSessionType.BATTING_DRILLS,
-            "batting_drills": CricketSessionType.BATTING_DRILLS,
-            "batting drills": CricketSessionType.BATTING_DRILLS,
-            "batting practice": CricketSessionType.BATTING_DRILLS,
-            "bat": CricketSessionType.BATTING_DRILLS,
-            "stroke play": CricketSessionType.BATTING_DRILLS,
-            "technique": CricketSessionType.BATTING_DRILLS,
+            "batting": CricketSessionType.BATTING_DRILLS.value,
+            "batting_drills": CricketSessionType.BATTING_DRILLS.value,
+            "batting drills": CricketSessionType.BATTING_DRILLS.value,
+            "batting practice": CricketSessionType.BATTING_DRILLS.value,
+            "bat": CricketSessionType.BATTING_DRILLS.value,
+            "stroke play": CricketSessionType.BATTING_DRILLS.value,
+            "technique": CricketSessionType.BATTING_DRILLS.value,
             # Wicket keeping variations
-            "keeping": CricketSessionType.WICKET_KEEPING,
-            "wicket_keeping": CricketSessionType.WICKET_KEEPING,
-            "wicket keeping": CricketSessionType.WICKET_KEEPING,
-            "wicketkeeping": CricketSessionType.WICKET_KEEPING,
-            "gloves": CricketSessionType.WICKET_KEEPING,
-            "keeper": CricketSessionType.WICKET_KEEPING,
+            "keeping": CricketSessionType.WICKET_KEEPING.value,
+            "wicket_keeping": CricketSessionType.WICKET_KEEPING.value,
+            "wicket keeping": CricketSessionType.WICKET_KEEPING.value,
+            "wicketkeeping": CricketSessionType.WICKET_KEEPING.value,
+            "gloves": CricketSessionType.WICKET_KEEPING.value,
+            "keeper": CricketSessionType.WICKET_KEEPING.value,
             # Netting variations
-            "nets": CricketSessionType.NETTING,
-            "netting": CricketSessionType.NETTING,
-            "net session": CricketSessionType.NETTING,
-            "net practice": CricketSessionType.NETTING,
+            "nets": CricketSessionType.NETTING.value,
+            "netting": CricketSessionType.NETTING.value,
+            "net session": CricketSessionType.NETTING.value,
+            "net practice": CricketSessionType.NETTING.value,
             # Personal coaching variations
-            "personal": CricketSessionType.PERSONAL_COACHING,
-            "personal_coaching": CricketSessionType.PERSONAL_COACHING,
-            "personal coaching": CricketSessionType.PERSONAL_COACHING,
-            "1-on-1": CricketSessionType.PERSONAL_COACHING,
-            "one on one": CricketSessionType.PERSONAL_COACHING,
-            "individual": CricketSessionType.PERSONAL_COACHING,
-            "private": CricketSessionType.PERSONAL_COACHING,
+            "personal": CricketSessionType.PERSONAL_COACHING.value,
+            "personal_coaching": CricketSessionType.PERSONAL_COACHING.value,
+            "personal coaching": CricketSessionType.PERSONAL_COACHING.value,
+            "1-on-1": CricketSessionType.PERSONAL_COACHING.value,
+            "one on one": CricketSessionType.PERSONAL_COACHING.value,
+            "individual": CricketSessionType.PERSONAL_COACHING.value,
+            "private": CricketSessionType.PERSONAL_COACHING.value,
             # Team practice variations
-            "team": CricketSessionType.TEAM_PRACTICE,
-            "team_practice": CricketSessionType.TEAM_PRACTICE,
-            "team practice": CricketSessionType.TEAM_PRACTICE,
-            "squad": CricketSessionType.TEAM_PRACTICE,
-            "group": CricketSessionType.TEAM_PRACTICE,
-            "training": CricketSessionType.TEAM_PRACTICE,
+            "team": CricketSessionType.TEAM_PRACTICE.value,
+            "team_practice": CricketSessionType.TEAM_PRACTICE.value,
+            "team practice": CricketSessionType.TEAM_PRACTICE.value,
+            "squad": CricketSessionType.TEAM_PRACTICE.value,
+            "group": CricketSessionType.TEAM_PRACTICE.value,
+            "training": CricketSessionType.TEAM_PRACTICE.value,
             # Other/general variations
-            "other": CricketSessionType.OTHER,
-            "general": CricketSessionType.OTHER,
-            "mixed": CricketSessionType.OTHER,
-            "various": CricketSessionType.OTHER,
+            "other": CricketSessionType.OTHER.value,
+            "general": CricketSessionType.OTHER.value,
+            "mixed": CricketSessionType.OTHER.value,
+            "various": CricketSessionType.OTHER.value,
         }
 
         normalized = session_type_mapping.get(session_type_lower)
@@ -111,19 +170,19 @@ class CricketCoachingRepository(
 
         # Try partial matching for compound terms
         if any(keyword in session_type_lower for keyword in ["batting", "bat", "stroke"]):
-            return CricketSessionType.BATTING_DRILLS
+            return CricketSessionType.BATTING_DRILLS.value
         if any(keyword in session_type_lower for keyword in ["keeping", "keeper", "glove"]):
-            return CricketSessionType.WICKET_KEEPING
+            return CricketSessionType.WICKET_KEEPING.value
         if any(keyword in session_type_lower for keyword in ["net", "practice"]):
-            return CricketSessionType.NETTING
+            return CricketSessionType.NETTING.value
         if any(keyword in session_type_lower for keyword in ["team", "squad", "group"]):
-            return CricketSessionType.TEAM_PRACTICE
+            return CricketSessionType.TEAM_PRACTICE.value
         if any(keyword in session_type_lower for keyword in ["personal", "individual", "private"]):
-            return CricketSessionType.PERSONAL_COACHING
+            return CricketSessionType.PERSONAL_COACHING.value
 
         # Default fallback
         logger.warning("Unknown session type '%s', defaulting to 'other'", session_type)
-        return CricketSessionType.OTHER
+        return CricketSessionType.OTHER.value
 
     def _normalize_integer_field(
         self,
@@ -308,35 +367,11 @@ class CricketCoachingRepository(
             msg = f"Failed to create cricket coaching entry: {e}"
             raise CricketRepositoryError(msg) from e
 
-    def _to_read_schema(self, db_record: CricketCoachingEntry) -> CricketCoachingEntryRead:
-        """Convert database model to read schema."""
-        return CricketCoachingEntryRead(
-            id=db_record.id,
-            session_id=db_record.session_id,
-            user_id=db_record.user_id,
-            session_type=db_record.session_type.value,
-            duration_minutes=db_record.duration_minutes,
-            what_went_well=db_record.what_went_well,
-            areas_for_improvement=db_record.areas_for_improvement,
-            skills_practiced=db_record.skills_practiced,
-            self_assessment_score=db_record.self_assessment_score,
-            confidence_level=db_record.confidence_level,
-            focus_level=db_record.focus_level,
-            mental_state=db_record.mental_state,
-            coach_feedback=db_record.coach_feedback,
-            difficulty_level=db_record.difficulty_level,
-            learning_satisfaction=db_record.learning_satisfaction,
-            notes=db_record.notes,
-            transcript=db_record.transcript,
-            confidence_score=db_record.confidence_score,
-            processing_duration=db_record.processing_duration,
-            created_at=db_record.created_at,
-            updated_at=db_record.updated_at,
-        )
+    # The _to_read_schema method is inherited from CRUDRepository
 
 
 class CricketMatchRepository(
-    BaseRepository[
+    CRUDRepository[
         CricketMatchEntry,
         CricketMatchEntryCreate,
         CricketMatchEntryRead,
@@ -347,44 +382,78 @@ class CricketMatchRepository(
 
     def __init__(self, session: AsyncSession) -> None:
         """Initialize cricket match repository."""
-        super().__init__(CricketMatchEntry, session)
+        super().__init__(
+            model=CricketMatchEntry,
+            create_schema=CricketMatchEntryCreate,
+            read_schema=CricketMatchEntryRead,
+            update_schema=CricketMatchEntryUpdate,
+            session=session,
+            not_found_exception=CricketMatchNotFoundError,
+            creation_exception=CricketMatchCreationError,
+            user_filter=self._user_filter,
+        )
 
-    def _normalize_match_type(self, match_type: str) -> MatchType:
-        """Normalize match type strings to valid MatchType enum values."""
+    def _user_filter(self, user: Any) -> Any:
+        """Filter by user."""
+        if user:
+            return CricketMatchEntry.user_id == user.id
+        return True
+
+    def _normalize_match_type(self, match_type: str) -> MatchFormat:
+        """Normalize match type strings to valid MatchFormat enum values."""
         match_type_lower = match_type.lower().strip()
 
         # Mapping of common variations to valid enum values
         match_type_mapping = {
             # Practice variations
-            "practice": MatchType.PRACTICE,
-            "friendly": MatchType.PRACTICE,
-            "casual": MatchType.PRACTICE,
-            "informal": MatchType.PRACTICE,
-            "nets": MatchType.PRACTICE,
-            # Tournament variations
-            "tournament": MatchType.TOURNAMENT,
-            "competition": MatchType.TOURNAMENT,
-            "t20": MatchType.TOURNAMENT,
-            "odi": MatchType.TOURNAMENT,
-            "one day": MatchType.TOURNAMENT,
-            "test": MatchType.TOURNAMENT,
-            "league": MatchType.TOURNAMENT,
-            "championship": MatchType.TOURNAMENT,
-            # School variations
-            "school": MatchType.SCHOOL,
-            "college": MatchType.SCHOOL,
-            "university": MatchType.SCHOOL,
-            "inter-school": MatchType.SCHOOL,
-            "academic": MatchType.SCHOOL,
-            # Club variations
-            "club": MatchType.CLUB,
-            "local": MatchType.CLUB,
-            "community": MatchType.CLUB,
-            "district": MatchType.CLUB,
-            # Other
-            "other": MatchType.OTHER,
-            "misc": MatchType.OTHER,
-            "miscellaneous": MatchType.OTHER,
+            "practice": MatchFormat.PRACTICE_MATCH,
+            "practice_match": MatchFormat.PRACTICE_MATCH,
+            "practice match": MatchFormat.PRACTICE_MATCH,
+            "friendly": MatchFormat.FRIENDLY,
+            "casual": MatchFormat.FRIENDLY,
+            "informal": MatchFormat.FRIENDLY,
+            "nets": MatchFormat.PRACTICE_MATCH,
+            # T20 variations
+            "t20": MatchFormat.T20,
+            "twenty20": MatchFormat.T20,
+            "20-20": MatchFormat.T20,
+            "20/20": MatchFormat.T20,
+            # ODI variations
+            "odi": MatchFormat.ODI,
+            "one day": MatchFormat.ODI,
+            "one-day": MatchFormat.ODI,
+            "50 over": MatchFormat.ODI,
+            "50-over": MatchFormat.ODI,
+            # Test variations
+            "test": MatchFormat.TEST,
+            "test match": MatchFormat.TEST,
+            "5 day": MatchFormat.TEST,
+            "five day": MatchFormat.TEST,
+            # List A variations
+            "list a": MatchFormat.LIST_A,
+            "list-a": MatchFormat.LIST_A,
+            "lista": MatchFormat.LIST_A,
+            # First class variations
+            "first class": MatchFormat.FIRST_CLASS,
+            "first-class": MatchFormat.FIRST_CLASS,
+            "fc": MatchFormat.FIRST_CLASS,
+            "firstclass": MatchFormat.FIRST_CLASS,
+            # Tournament
+            "tournament": MatchFormat.T20,  # Default tournament to T20
+            "competition": MatchFormat.T20,
+            "league": MatchFormat.T20,
+            "championship": MatchFormat.T20,
+            # School/College defaults to practice match
+            "school": MatchFormat.PRACTICE_MATCH,
+            "college": MatchFormat.PRACTICE_MATCH,
+            "university": MatchFormat.PRACTICE_MATCH,
+            "inter-school": MatchFormat.PRACTICE_MATCH,
+            "academic": MatchFormat.PRACTICE_MATCH,
+            # Club matches
+            "club": MatchFormat.FRIENDLY,
+            "local": MatchFormat.FRIENDLY,
+            "community": MatchFormat.FRIENDLY,
+            "district": MatchFormat.FRIENDLY,
         }
 
         normalized = match_type_mapping.get(match_type_lower)
@@ -396,26 +465,33 @@ class CricketMatchRepository(
             keyword in match_type_lower
             for keyword in ["friendly", "practice", "casual", "informal", "nets"]
         ):
-            return MatchType.PRACTICE
+            return MatchFormat.PRACTICE_MATCH
+        if any(keyword in match_type_lower for keyword in ["t20", "twenty", "20"]):
+            return MatchFormat.T20
+        if any(keyword in match_type_lower for keyword in ["odi", "one day", "50"]):
+            return MatchFormat.ODI
+        if any(keyword in match_type_lower for keyword in ["test", "5 day", "five day"]):
+            return MatchFormat.TEST
+        if any(keyword in match_type_lower for keyword in ["first class", "first-class"]):
+            return MatchFormat.FIRST_CLASS
         if any(
             keyword in match_type_lower
-            for keyword in ["tournament", "competition", "t20", "odi", "test", "league"]
+            for keyword in ["tournament", "competition", "league", "championship"]
         ):
-            return MatchType.TOURNAMENT
+            return MatchFormat.T20  # Default tournament to T20
         if any(
             keyword in match_type_lower
             for keyword in ["school", "college", "university", "academic"]
         ):
-            return MatchType.SCHOOL
+            return MatchFormat.PRACTICE_MATCH
         if any(
-            keyword in match_type_lower
-            for keyword in ["club", "local", "community", "league", "district"]
+            keyword in match_type_lower for keyword in ["club", "local", "community", "district"]
         ):
-            return MatchType.CLUB
+            return MatchFormat.FRIENDLY
 
         # Default fallback
-        logger.warning("Unknown match type '%s', defaulting to 'other'", match_type)
-        return MatchType.OTHER
+        logger.warning("Unknown match type '%s', defaulting to 'friendly'", match_type)
+        return MatchFormat.FRIENDLY
 
     def _normalize_integer_field(
         self,
@@ -668,13 +744,28 @@ class CricketMatchRepository(
 
 
 class RestDayRepository(
-    BaseRepository[RestDayEntry, RestDayEntryCreate, RestDayEntryRead, RestDayEntryUpdate],
+    CRUDRepository[RestDayEntry, RestDayEntryCreate, RestDayEntryRead, RestDayEntryUpdate],
 ):
     """Repository for rest day operations."""
 
     def __init__(self, session: AsyncSession) -> None:
         """Initialize rest day repository."""
-        super().__init__(RestDayEntry, session)
+        super().__init__(
+            model=RestDayEntry,
+            create_schema=RestDayEntryCreate,
+            read_schema=RestDayEntryRead,
+            update_schema=RestDayEntryUpdate,
+            session=session,
+            not_found_exception=RestDayNotFoundError,
+            creation_exception=RestDayCreationError,
+            user_filter=self._user_filter,
+        )
+
+    def _user_filter(self, user):
+        """Filter by user."""
+        if user:
+            return RestDayEntry.user_id == user.id
+        return True
 
     def _normalize_rest_type(self, rest_type: str) -> RestType:
         """Normalize rest type strings to valid RestType enum values."""
@@ -683,38 +774,38 @@ class RestDayRepository(
         # Mapping of common variations to valid enum values
         rest_type_mapping = {
             # Complete rest variations
-            "complete_rest": RestType.COMPLETE_REST,
-            "complete rest": RestType.COMPLETE_REST,
-            "full rest": RestType.COMPLETE_REST,
-            "total rest": RestType.COMPLETE_REST,
-            "no activity": RestType.COMPLETE_REST,
-            "rest": RestType.COMPLETE_REST,
-            "off": RestType.COMPLETE_REST,
-            "lazy": RestType.COMPLETE_REST,
-            "chill": RestType.COMPLETE_REST,
+            "complete_rest": RestType.COMPLETE.value,
+            "complete rest": RestType.COMPLETE.value,
+            "full rest": RestType.COMPLETE.value,
+            "total rest": RestType.COMPLETE.value,
+            "no activity": RestType.COMPLETE.value,
+            "rest": RestType.COMPLETE.value,
+            "off": RestType.COMPLETE.value,
+            "lazy": RestType.COMPLETE.value,
+            "chill": RestType.COMPLETE.value,
             # Active recovery variations
-            "active_recovery": RestType.ACTIVE_RECOVERY,
-            "active recovery": RestType.ACTIVE_RECOVERY,
-            "light activity": RestType.ACTIVE_RECOVERY,
-            "easy day": RestType.ACTIVE_RECOVERY,
-            "gentle": RestType.ACTIVE_RECOVERY,
-            "walk": RestType.ACTIVE_RECOVERY,
-            "walking": RestType.ACTIVE_RECOVERY,
-            "stretch": RestType.ACTIVE_RECOVERY,
-            "stretching": RestType.ACTIVE_RECOVERY,
-            "yoga": RestType.ACTIVE_RECOVERY,
-            "mobility": RestType.ACTIVE_RECOVERY,
+            "active_recovery": RestType.ACTIVE.value,
+            "active recovery": RestType.ACTIVE.value,
+            "light activity": RestType.ACTIVE.value,
+            "easy day": RestType.ACTIVE.value,
+            "gentle": RestType.ACTIVE.value,
+            "walk": RestType.ACTIVE.value,
+            "walking": RestType.ACTIVE.value,
+            "stretch": RestType.ACTIVE.value,
+            "stretching": RestType.ACTIVE.value,
+            "yoga": RestType.ACTIVE.value,
+            "mobility": RestType.ACTIVE.value,
             # Injury recovery variations
-            "injury_recovery": RestType.INJURY_RECOVERY,
-            "injury recovery": RestType.INJURY_RECOVERY,
-            "hurt": RestType.INJURY_RECOVERY,
-            "injured": RestType.INJURY_RECOVERY,
-            "pain": RestType.INJURY_RECOVERY,
-            "sore": RestType.INJURY_RECOVERY,
-            "rehab": RestType.INJURY_RECOVERY,
-            "rehabilitation": RestType.INJURY_RECOVERY,
-            "healing": RestType.INJURY_RECOVERY,
-            "recovery": RestType.INJURY_RECOVERY,
+            "injury_recovery": RestType.RECOVERY_DAY.value,
+            "injury recovery": RestType.RECOVERY_DAY.value,
+            "hurt": RestType.RECOVERY_DAY.value,
+            "injured": RestType.RECOVERY_DAY.value,
+            "pain": RestType.RECOVERY_DAY.value,
+            "sore": RestType.RECOVERY_DAY.value,
+            "rehab": RestType.RECOVERY_DAY.value,
+            "rehabilitation": RestType.RECOVERY_DAY.value,
+            "healing": RestType.RECOVERY_DAY.value,
+            "recovery": RestType.RECOVERY_DAY.value,
         }
 
         normalized = rest_type_mapping.get(rest_type_lower)
@@ -723,20 +814,20 @@ class RestDayRepository(
 
         # Try partial matching for compound terms
         if any(keyword in rest_type_lower for keyword in ["complete", "full", "total", "off"]):
-            return RestType.COMPLETE_REST
+            return RestType.COMPLETE.value
         if any(
             keyword in rest_type_lower
             for keyword in ["active", "light", "gentle", "walk", "stretch", "yoga"]
         ):
-            return RestType.ACTIVE_RECOVERY
+            return RestType.ACTIVE.value
         if any(
             keyword in rest_type_lower for keyword in ["injury", "hurt", "pain", "rehab", "healing"]
         ):
-            return RestType.INJURY_RECOVERY
+            return RestType.RECOVERY_DAY.value
 
         # Default fallback
         logger.warning("Unknown rest type '%s', defaulting to 'complete_rest'", rest_type)
-        return RestType.COMPLETE_REST
+        return RestType.COMPLETE.value
 
     def _normalize_integer_field(
         self,

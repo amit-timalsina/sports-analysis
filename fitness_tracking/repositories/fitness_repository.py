@@ -8,8 +8,9 @@ from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from common.exceptions import AppError
-from common.repositories.base_repository import BaseRepository
-from fitness_tracking.models.fitness import FitnessEntry, FitnessType, Intensity
+from common.repositories.crud_repository import CRUDRepository
+from fitness_tracking.models.fitness import FitnessEntry
+from fitness_tracking.schemas.exercise_type import ExerciseType
 from fitness_tracking.schemas.fitness import (
     FitnessAnalytics,
     FitnessDataExtraction,
@@ -17,6 +18,7 @@ from fitness_tracking.schemas.fitness import (
     FitnessEntryRead,
     FitnessEntryUpdate,
 )
+from fitness_tracking.schemas.intensity_level import IntensityLevel
 
 logger = logging.getLogger(__name__)
 
@@ -28,47 +30,83 @@ class FitnessRepositoryError(AppError):
     detail = "Fitness repository operation failed"
 
 
+class FitnessEntryNotFoundError(AppError):
+    """Fitness entry not found error."""
+
+    status_code = 404
+    detail = "Fitness entry not found"
+
+
+class FitnessEntryCreationError(AppError):
+    """Fitness entry creation error."""
+
+    status_code = 400
+    detail = "Failed to create fitness entry"
+
+
 class FitnessRepository(
-    BaseRepository[FitnessEntry, FitnessEntryCreate, FitnessEntryRead, FitnessEntryUpdate],
+    CRUDRepository[FitnessEntry, FitnessEntryCreate, FitnessEntryRead, FitnessEntryUpdate],
 ):
     """Repository for fitness entry operations with analytics."""
 
     def __init__(self, session: AsyncSession) -> None:
         """Initialize fitness repository."""
-        super().__init__(FitnessEntry, session)
+        super().__init__(
+            model=FitnessEntry,
+            create_schema=FitnessEntryCreate,
+            read_schema=FitnessEntryRead,
+            update_schema=FitnessEntryUpdate,
+            session=session,
+            not_found_exception=FitnessEntryNotFoundError,
+            creation_exception=FitnessEntryCreationError,
+            user_filter=self._user_filter,
+        )
 
-    def _normalize_intensity(self, intensity_value: str | None) -> Intensity:
+    def _user_filter(self, user: Any) -> Any:
+        """Filter by user."""
+        if user:
+            return FitnessEntry.user_id == user.id
+        return True
+
+    def _normalize_intensity(self, intensity_value: str | None) -> IntensityLevel:
         """Normalize AI-extracted intensity values to valid enum values."""
         if not intensity_value:
-            return Intensity.MEDIUM
+            return IntensityLevel.MODERATE
 
         intensity_lower = intensity_value.lower().strip()
 
         # Mapping of AI variations to valid enum values
         intensity_mapping = {
             # Low intensity variations
-            "low": Intensity.LOW,
-            "very light": Intensity.LOW,
-            "light": Intensity.LOW,
-            "easy": Intensity.LOW,
-            "gentle": Intensity.LOW,
-            "minimal": Intensity.LOW,
-            "relaxed": Intensity.LOW,
-            # Medium intensity variations
-            "medium": Intensity.MEDIUM,
-            "moderate": Intensity.MEDIUM,
-            "normal": Intensity.MEDIUM,
-            "average": Intensity.MEDIUM,
-            "standard": Intensity.MEDIUM,
+            "low": IntensityLevel.LOW,
+            "very light": IntensityLevel.LOW,
+            "light": IntensityLevel.LOW,
+            "easy": IntensityLevel.LOW,
+            "gentle": IntensityLevel.LOW,
+            "minimal": IntensityLevel.LOW,
+            "relaxed": IntensityLevel.LOW,
+            # Moderate intensity variations
+            "moderate": IntensityLevel.MODERATE,
+            "medium": IntensityLevel.MODERATE,
+            "normal": IntensityLevel.MODERATE,
+            "average": IntensityLevel.MODERATE,
+            "standard": IntensityLevel.MODERATE,
             # High intensity variations
-            "high": Intensity.HIGH,
-            "intense": Intensity.HIGH,
-            "hard": Intensity.HIGH,
-            "tough": Intensity.HIGH,
-            "challenging": Intensity.HIGH,
-            "vigorous": Intensity.HIGH,
-            "difficult": Intensity.HIGH,
-            "heavy": Intensity.HIGH,
+            "high": IntensityLevel.HIGH,
+            "intense": IntensityLevel.HIGH,
+            "hard": IntensityLevel.HIGH,
+            "tough": IntensityLevel.HIGH,
+            "challenging": IntensityLevel.HIGH,
+            "vigorous": IntensityLevel.HIGH,
+            "difficult": IntensityLevel.HIGH,
+            "heavy": IntensityLevel.HIGH,
+            # Very high intensity variations
+            "very high": IntensityLevel.VERY_HIGH,
+            "extreme": IntensityLevel.VERY_HIGH,
+            "extremely high": IntensityLevel.VERY_HIGH,
+            "maximum": IntensityLevel.VERY_HIGH,
+            "max": IntensityLevel.VERY_HIGH,
+            "exhausting": IntensityLevel.VERY_HIGH,
         }
 
         # Try exact match first
@@ -78,60 +116,64 @@ class FitnessRepository(
         # Try partial matches for compound descriptions
         if any(word in intensity_lower for word in ["very", "extremely", "super"]):
             if any(word in intensity_lower for word in ["light", "easy", "low"]):
-                return Intensity.LOW
+                return IntensityLevel.LOW
             if any(word in intensity_lower for word in ["hard", "intense", "high"]):
-                return Intensity.HIGH
+                return IntensityLevel.VERY_HIGH
 
         # Default fallback
-        logger.warning("Unknown intensity value '%s', defaulting to MEDIUM", intensity_value)
-        return Intensity.MEDIUM
+        logger.warning("Unknown intensity value '%s', defaulting to MODERATE", intensity_value)
+        return IntensityLevel.MODERATE
 
-    def _normalize_fitness_type(self, fitness_type_value: str | None) -> FitnessType:
+    def _normalize_fitness_type(self, fitness_type_value: str | None) -> ExerciseType:
         """Normalize AI-extracted fitness type values to valid enum values."""
         if not fitness_type_value:
-            return FitnessType.GENERAL_FITNESS
+            return ExerciseType.OTHER
 
         fitness_lower = fitness_type_value.lower().strip()
 
         # Mapping of AI variations to valid enum values
         fitness_mapping = {
-            # Running variations
-            "running": FitnessType.RUNNING,
-            "run": FitnessType.RUNNING,
-            "jog": FitnessType.RUNNING,
-            "jogging": FitnessType.RUNNING,
-            "sprint": FitnessType.RUNNING,
-            "sprinting": FitnessType.RUNNING,
-            # Strength training variations
-            "strength_training": FitnessType.STRENGTH_TRAINING,
-            "strength training": FitnessType.STRENGTH_TRAINING,
-            "weights": FitnessType.STRENGTH_TRAINING,
-            "weight training": FitnessType.STRENGTH_TRAINING,
-            "gym": FitnessType.STRENGTH_TRAINING,
-            "lifting": FitnessType.STRENGTH_TRAINING,
-            "weight lifting": FitnessType.STRENGTH_TRAINING,
-            # Cricket specific variations
-            "cricket_specific": FitnessType.CRICKET_SPECIFIC,
-            "cricket specific": FitnessType.CRICKET_SPECIFIC,
-            "cricket training": FitnessType.CRICKET_SPECIFIC,
-            "cricket fitness": FitnessType.CRICKET_SPECIFIC,
             # Cardio variations
-            "cardio": FitnessType.CARDIO,
-            "cardiovascular": FitnessType.CARDIO,
-            "aerobic": FitnessType.CARDIO,
-            "cycling": FitnessType.CARDIO,
-            "swimming": FitnessType.CARDIO,
+            "cardio": ExerciseType.CARDIO,
+            "cardiovascular": ExerciseType.CARDIO,
+            "aerobic": ExerciseType.CARDIO,
+            "running": ExerciseType.CARDIO,
+            "run": ExerciseType.CARDIO,
+            "jog": ExerciseType.CARDIO,
+            "jogging": ExerciseType.CARDIO,
+            "cycling": ExerciseType.CARDIO,
+            "swimming": ExerciseType.CARDIO,
+            "hiit": ExerciseType.CARDIO,
+            # Strength training variations
+            "strength": ExerciseType.STRENGTH,
+            "strength training": ExerciseType.STRENGTH,
+            "weights": ExerciseType.STRENGTH,
+            "weight training": ExerciseType.STRENGTH,
+            "gym": ExerciseType.STRENGTH,
+            "lifting": ExerciseType.STRENGTH,
+            "weight lifting": ExerciseType.STRENGTH,
+            "resistance": ExerciseType.STRENGTH,
             # Flexibility variations
-            "flexibility": FitnessType.FLEXIBILITY,
-            "stretching": FitnessType.FLEXIBILITY,
-            "yoga": FitnessType.FLEXIBILITY,
-            "pilates": FitnessType.FLEXIBILITY,
-            # General fitness variations
-            "general_fitness": FitnessType.GENERAL_FITNESS,
-            "general fitness": FitnessType.GENERAL_FITNESS,
-            "fitness": FitnessType.GENERAL_FITNESS,
-            "workout": FitnessType.GENERAL_FITNESS,
-            "exercise": FitnessType.GENERAL_FITNESS,
+            "flexibility": ExerciseType.FLEXIBILITY,
+            "stretching": ExerciseType.FLEXIBILITY,
+            "yoga": ExerciseType.FLEXIBILITY,
+            "pilates": ExerciseType.FLEXIBILITY,
+            "mobility": ExerciseType.FLEXIBILITY,
+            # Sports variations
+            "sports": ExerciseType.SPORTS,
+            "sport": ExerciseType.SPORTS,
+            "cricket": ExerciseType.SPORTS,
+            "football": ExerciseType.SPORTS,
+            "basketball": ExerciseType.SPORTS,
+            "tennis": ExerciseType.SPORTS,
+            # Other
+            "other": ExerciseType.OTHER,
+            "general": ExerciseType.OTHER,
+            "mixed": ExerciseType.OTHER,
+            "various": ExerciseType.OTHER,
+            "fitness": ExerciseType.OTHER,
+            "workout": ExerciseType.OTHER,
+            "exercise": ExerciseType.OTHER,
         }
 
         # Try exact match first
@@ -145,10 +187,10 @@ class FitnessRepository(
 
         # Default fallback
         logger.warning(
-            "Unknown fitness type value '%s', defaulting to GENERAL_FITNESS",
+            "Unknown fitness type value '%s', defaulting to OTHER",
             fitness_type_value,
         )
-        return FitnessType.GENERAL_FITNESS
+        return ExerciseType.OTHER
 
     def _normalize_energy_level(self, energy_value: Any) -> int:
         """Normalize AI-extracted energy level values to valid 1-5 range."""
@@ -400,9 +442,10 @@ class FitnessRepository(
             return 0.0
 
         intensity_scores = {
-            Intensity.LOW: 1,
-            Intensity.MEDIUM: 2,
-            Intensity.HIGH: 3,
+            IntensityLevel.LOW: 1,
+            IntensityLevel.MODERATE: 2,
+            IntensityLevel.HIGH: 3,
+            IntensityLevel.VERY_HIGH: 4,
         }
 
         total_score = sum(intensity_scores.get(intensity, 2) for intensity in intensities)

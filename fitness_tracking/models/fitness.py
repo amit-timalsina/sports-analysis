@@ -1,70 +1,101 @@
-"""Fitness tracking database models."""
+"""Fitness tracking SQLAlchemy 2.0 models."""
 
-from datetime import datetime
-from enum import Enum
+from datetime import time
 
-from sqlalchemy import DateTime, func
-from sqlmodel import Column, Field, SQLModel
+from sqlalchemy import JSON, String
+from sqlalchemy import Enum as SA_Enum
+from sqlalchemy.orm import Mapped, mapped_column
 
-
-class FitnessType(str, Enum):
-    """Types of fitness activities."""
-
-    RUNNING = "running"
-    STRENGTH_TRAINING = "strength_training"
-    CRICKET_SPECIFIC = "cricket_specific"
-    CARDIO = "cardio"
-    FLEXIBILITY = "flexibility"
-    GENERAL_FITNESS = "general_fitness"
+from common.models.activity import ActivityEntryBase
+from common.schemas.entry_type import EntryType
+from fitness_tracking.schemas.exercise_type import ExerciseType
+from fitness_tracking.schemas.intensity_level import IntensityLevel
 
 
-class Intensity(str, Enum):
-    """Intensity levels for activities."""
-
-    LOW = "low"
-    MEDIUM = "medium"
-    HIGH = "high"
-
-
-class FitnessEntry(SQLModel, table=True):
-    """Database model for fitness activity entries."""
+class FitnessEntry(ActivityEntryBase):
+    """SQLAlchemy 2.0 model for fitness activity entries."""
 
     __tablename__ = "fitness_entries"
 
-    # Primary key
-    id: int | None = Field(default=None, primary_key=True)
-
-    # User and session info
-    user_id: str = Field(index=True, description="User identifier")
-    session_id: str = Field(index=True, description="Voice session identifier")
-
-    # Voice processing metadata
-    transcript: str = Field(description="Original voice transcript")
-    confidence_score: float = Field(ge=0.0, le=1.0, description="AI confidence in data extraction")
-    processing_duration: float | None = Field(
-        default=None,
-        description="Time taken to process in seconds",
+    # Set the entry type
+    entry_type: Mapped[EntryType] = mapped_column(
+        SA_Enum(EntryType),
+        default=EntryType.FITNESS,
+        index=True,
     )
 
-    # Fitness activity data
-    fitness_type: FitnessType = Field(description="Type of fitness activity")
-    duration_minutes: int = Field(gt=0, description="Duration in minutes")
-    intensity: Intensity = Field(description="Intensity level")
-    details: str = Field(description="Activity details")
-    mental_state: str = Field(description="Mental state during activity")
-    energy_level: int = Field(ge=1, le=5, description="Energy level 1-5")
+    # Core fitness fields
+    exercise_type: Mapped[ExerciseType] = mapped_column(SA_Enum(ExerciseType))
+    exercise_name: Mapped[str] = mapped_column(String)
+    duration_minutes: Mapped[int] = mapped_column()
+    intensity: Mapped[IntensityLevel] = mapped_column(SA_Enum(IntensityLevel))
 
     # Optional metrics
-    distance_km: float | None = Field(default=None, ge=0, description="Distance in kilometers")
-    location: str | None = Field(default=None, description="Location of activity")
-    notes: str | None = Field(default=None, description="Additional notes")
+    calories_burned: Mapped[int | None] = mapped_column()
+    distance_km: Mapped[float | None] = mapped_column()
+    sets: Mapped[int | None] = mapped_column()
+    reps: Mapped[int | None] = mapped_column()
+    weight_kg: Mapped[float | None] = mapped_column()
 
-    # Timestamps
-    created_at: datetime = Field(
-        default_factory=datetime.utcnow,
-        sa_column=Column(DateTime(timezone=True), server_default=func.now()),
+    # Advanced metrics
+    heart_rate_avg: Mapped[int | None] = mapped_column()
+    heart_rate_max: Mapped[int | None] = mapped_column()
+    workout_rating: Mapped[int | None] = mapped_column()
+
+    # Equipment and location
+    equipment_used: Mapped[list[str] | None] = mapped_column(JSON)
+    location: Mapped[str | None] = mapped_column(String)
+    gym_name: Mapped[str | None] = mapped_column(String)
+
+    # Weather conditions (for outdoor activities)
+    weather_conditions: Mapped[str | None] = mapped_column(String)
+    temperature: Mapped[float | None] = mapped_column()
+
+    # Social aspects
+    workout_partner: Mapped[str | None] = mapped_column(String)
+    trainer_name: Mapped[str | None] = mapped_column(String)
+
+    # Timing specifics
+    start_time: Mapped[time | None] = mapped_column()
+    end_time: Mapped[time | None] = mapped_column()
+
+
+class RestDayEntry(ActivityEntryBase):
+    """SQLAlchemy 2.0 model for rest day entries."""
+
+    __tablename__ = "rest_day_entries"
+
+    # Set the entry type
+    entry_type: Mapped[EntryType] = mapped_column(
+        SA_Enum(EntryType),
+        default=EntryType.REST_DAY,
+        index=True,
     )
-    updated_at: datetime | None = Field(
-        default=None,
-        sa_column=Column(DateTime(timezone=True), onupdate=func.now()),
-    )
+
+    # Rest day specifics
+    rest_type: Mapped[str] = mapped_column(String)  # active, complete, partial
+    planned: Mapped[bool] = mapped_column(default=False)
+
+    # Recovery activities
+    recovery_activities: Mapped[list[str] | None] = mapped_column(JSON)
+    sleep_hours: Mapped[float | None] = mapped_column()
+    sleep_quality: Mapped[int | None] = mapped_column()  # 1-10 scale
+
+    # Physical state
+    muscle_soreness: Mapped[int | None] = mapped_column()  # 1-10 scale
+    fatigue_level: Mapped[int | None] = mapped_column()  # 1-10 scale
+    stress_level: Mapped[int | None] = mapped_column()  # 1-10 scale
+
+    # Recovery metrics
+    recovery_score: Mapped[int | None] = mapped_column()  # 1-100 scale
+    readiness_for_next_workout: Mapped[int | None] = mapped_column()  # 1-10 scale
+
+    # Wellness activities
+    meditation_minutes: Mapped[int | None] = mapped_column()
+    stretching_minutes: Mapped[int | None] = mapped_column()
+    massage_minutes: Mapped[int | None] = mapped_column()
+
+    # Nutrition focus
+    hydration_liters: Mapped[float | None] = mapped_column()
+    protein_focus: Mapped[bool | None] = mapped_column()
+    nutrition_notes: Mapped[str | None] = mapped_column(String)

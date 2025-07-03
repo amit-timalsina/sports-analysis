@@ -1,190 +1,145 @@
 """Cricket tracking Pydantic schemas."""
 
-from datetime import datetime
-from typing import Literal
+from datetime import datetime, time
+from typing import Any, Literal
+from uuid import UUID
 
 from pydantic import Field
 
 from common.config.settings import settings
-from common.schemas import AppBaseModel
+from common.schemas import AppBaseModel, PrimaryKeyBase, TimestampBase
+from common.schemas.activity import ActivityEntryBase
+from common.schemas.entry_type import EntryType
+from fitness_tracking.schemas.cricket_enums import (
+    CoachingFocus,
+    CricketDiscipline,
+    MatchFormat,
+)
 
 
 # Cricket Coaching Schemas
-class CricketCoachingEntryCreate(AppBaseModel):
-    """Schema for creating cricket coaching session entries."""
+class CricketCoachingEntryBase(ActivityEntryBase):
+    """Base schema for cricket coaching entries."""
 
-    session_type: Literal[
-        "batting_drills",
-        "wicket_keeping",
-        "netting",
-        "personal_coaching",
-        "team_practice",
-        "other",
-    ]
-    duration_minutes: int = Field(
-        ...,
-        ge=settings.validation.min_fitness_duration_minutes,
-        le=settings.validation.max_fitness_duration_minutes,
-        description="Duration in minutes",
-    )
-    what_went_well: str = Field(
-        ...,
-        min_length=settings.validation.min_text_length,
-        max_length=settings.validation.max_text_length,
-        description="What went well in the session",
-    )
-    areas_for_improvement: str = Field(
-        ...,
-        min_length=settings.validation.min_text_length,
-        max_length=settings.validation.max_text_length,
-        description="Areas that need improvement",
-    )
-    coach_feedback: str | None = Field(
+    entry_type: EntryType = Field(default=EntryType.CRICKET_COACHING, description="Entry type")
+    coach_name: str = Field(..., description="Name of the coach")
+    session_type: str = Field(..., description="Type of session (individual, group, masterclass)")
+    duration_minutes: int = Field(..., gt=0, description="Duration in minutes")
+    primary_focus: CoachingFocus = Field(..., description="Primary focus of the session")
+    skills_practiced: list[str] = Field(default_factory=list, description="Skills practiced")
+    discipline_focus: CricketDiscipline = Field(..., description="Cricket discipline focus")
+
+
+class CricketCoachingEntryCreate(CricketCoachingEntryBase):
+    """Schema for creating a cricket coaching entry."""
+
+    secondary_focus: CoachingFocus | None = Field(
         None,
-        max_length=settings.validation.max_text_length,
-        description="Coach feedback if available",
-    )
-    self_assessment_score: int = Field(..., ge=1, le=10, description="Self-assessment score 1-10")
-
-    # Technical focus areas
-    skills_practiced: str = Field(
-        ...,
-        min_length=settings.validation.min_text_length,
-        max_length=settings.validation.max_text_length,
-        description="Skills practiced during session",
-    )
-    time_per_skill: str | None = Field(None, max_length=500, description="Time spent on each skill")
-    difficulty_level: int = Field(..., ge=1, le=10, description="Difficulty level of exercises")
-
-    # Mental state during session
-    confidence_level: int = Field(..., ge=1, le=10, description="Confidence level during session")
-    focus_level: int = Field(..., ge=1, le=10, description="Focus level during session")
-    learning_satisfaction: int = Field(..., ge=1, le=10, description="Learning satisfaction")
-    frustration_points: str | None = Field(
-        None,
-        max_length=settings.validation.max_text_length,
-        description="Points of frustration",
+        description="Secondary focus of the session",
     )
 
-    # Common fields
-    mental_state: Literal["excellent", "good", "okay", "poor"]
-    notes: str | None = Field(
-        None,
-        max_length=settings.validation.max_text_length,
-        description="Additional notes",
-    )
+    # Session structure
+    warm_up_minutes: int | None = Field(None, ge=0, description="Warm-up time in minutes")
+    skill_work_minutes: int | None = Field(None, ge=0, description="Skill work time in minutes")
+    game_simulation_minutes: int | None = Field(None, ge=0, description="Game simulation time")
+    cool_down_minutes: int | None = Field(None, ge=0, description="Cool-down time in minutes")
+
+    # Equipment and setup
+    equipment_used: list[str] | None = Field(None, description="Equipment used during session")
+    facility_name: str | None = Field(None, description="Name of the facility")
+    indoor_outdoor: str | None = Field(None, description="Indoor or outdoor session")
+
+    # Performance tracking
+    technique_rating: int | None = Field(None, ge=1, le=10, description="Technique rating 1-10")
+    effort_level: int | None = Field(None, ge=1, le=10, description="Effort level 1-10")
+    coach_feedback: str | None = Field(None, description="Coach feedback")
+    improvement_areas: list[str] | None = Field(None, description="Areas for improvement")
+
+    # Goals and targets
+    session_goals: list[str] | None = Field(None, description="Goals for the session")
+    goals_achieved: list[str] | None = Field(None, description="Goals achieved")
+    next_session_focus: str | None = Field(None, description="Focus for next session")
+
+    # Cost and logistics
+    session_cost: float | None = Field(None, ge=0.0, description="Cost of the session")
+    group_size: int | None = Field(None, ge=1, description="Number of people in group")
+
+    # Timing
+    start_time: time | None = Field(None, description="Session start time")
+    end_time: time | None = Field(None, description="Session end time")
+
+    # Data quality tracking
+    processing_duration: float | None = Field(None, ge=0.0, description="Processing duration")
+    data_quality_score: float | None = Field(None, ge=0.0, le=1.0, description="Data quality score")
+    manual_overrides: dict[str, Any] | None = Field(None, description="Manual data overrides")
+    validation_notes: str | None = Field(None, description="Validation notes")
+    energy_level: int | None = Field(None, ge=1, le=10, description="Energy level 1-10")
+    notes: str | None = Field(None, description="Additional notes")
 
 
-class CricketCoachingEntryRead(AppBaseModel):
-    """Schema for reading cricket coaching session entries."""
+class CricketCoachingEntryRead(PrimaryKeyBase, TimestampBase, CricketCoachingEntryBase):
+    """Schema for reading cricket coaching entry data."""
 
-    id: int
-    session_id: str
-    user_id: str
-    session_type: str
-    duration_minutes: int
-    what_went_well: str
-    areas_for_improvement: str
+    secondary_focus: CoachingFocus | None
+    warm_up_minutes: int | None
+    skill_work_minutes: int | None
+    game_simulation_minutes: int | None
+    cool_down_minutes: int | None
+    equipment_used: list[str] | None
+    facility_name: str | None
+    indoor_outdoor: str | None
+    technique_rating: int | None
+    effort_level: int | None
     coach_feedback: str | None
-    self_assessment_score: int
-    skills_practiced: str
-    time_per_skill: str | None
-    difficulty_level: int
-    confidence_level: int
-    focus_level: int
-    learning_satisfaction: int
-    frustration_points: str | None
-    mental_state: str
-    notes: str | None
-    # Voice processing metadata
-    transcript: str
-    confidence_score: float
+    improvement_areas: list[str] | None
+    session_goals: list[str] | None
+    goals_achieved: list[str] | None
+    next_session_focus: str | None
+    session_cost: float | None
+    group_size: int | None
+    start_time: time | None
+    end_time: time | None
     processing_duration: float | None
-    # Timestamps
-    created_at: datetime
-    updated_at: datetime | None
+    data_quality_score: float | None
+    manual_overrides: dict[str, Any] | None
+    validation_notes: str | None
+    energy_level: int | None
+    notes: str | None
 
 
 class CricketCoachingEntryUpdate(AppBaseModel):
-    """Schema for updating cricket coaching session entries."""
+    """Schema for updating a cricket coaching entry."""
 
-    session_type: (
-        Literal[
-            "batting_drills",
-            "wicket_keeping",
-            "netting",
-            "personal_coaching",
-            "team_practice",
-            "other",
-        ]
-        | None
-    ) = None
-    duration_minutes: int | None = Field(
-        None,
-        ge=settings.validation.min_fitness_duration_minutes,
-        le=settings.validation.max_fitness_duration_minutes,
-        description="Duration in minutes",
-    )
-    what_went_well: str | None = Field(
-        None,
-        min_length=settings.validation.min_text_length,
-        max_length=settings.validation.max_text_length,
-        description="What went well in the session",
-    )
-    areas_for_improvement: str | None = Field(
-        None,
-        min_length=settings.validation.min_text_length,
-        max_length=settings.validation.max_text_length,
-        description="Areas that need improvement",
-    )
-    coach_feedback: str | None = Field(
-        None,
-        max_length=settings.validation.max_text_length,
-        description="Coach feedback if available",
-    )
-    self_assessment_score: int | None = Field(
-        None,
-        ge=1,
-        le=10,
-        description="Self-assessment score 1-10",
-    )
-    skills_practiced: str | None = Field(
-        None,
-        min_length=settings.validation.min_text_length,
-        max_length=settings.validation.max_text_length,
-        description="Skills practiced during session",
-    )
-    time_per_skill: str | None = Field(None, max_length=500, description="Time spent on each skill")
-    difficulty_level: int | None = Field(
-        None,
-        ge=1,
-        le=10,
-        description="Difficulty level of exercises",
-    )
-    confidence_level: int | None = Field(
-        None,
-        ge=1,
-        le=10,
-        description="Confidence level during session",
-    )
-    focus_level: int | None = Field(None, ge=1, le=10, description="Focus level during session")
-    learning_satisfaction: int | None = Field(
-        None,
-        ge=1,
-        le=10,
-        description="Learning satisfaction",
-    )
-    frustration_points: str | None = Field(
-        None,
-        max_length=settings.validation.max_text_length,
-        description="Points of frustration",
-    )
-    mental_state: Literal["excellent", "good", "okay", "poor"] | None = None
-    notes: str | None = Field(
-        None,
-        max_length=settings.validation.max_text_length,
-        description="Additional notes",
-    )
+    coach_name: str | None = None
+    session_type: str | None = None
+    duration_minutes: int | None = Field(None, gt=0)
+    primary_focus: CoachingFocus | None = None
+    secondary_focus: CoachingFocus | None = None
+    skills_practiced: list[str] | None = None
+    discipline_focus: CricketDiscipline | None = None
+    warm_up_minutes: int | None = Field(None, ge=0)
+    skill_work_minutes: int | None = Field(None, ge=0)
+    game_simulation_minutes: int | None = Field(None, ge=0)
+    cool_down_minutes: int | None = Field(None, ge=0)
+    equipment_used: list[str] | None = None
+    facility_name: str | None = None
+    indoor_outdoor: str | None = None
+    technique_rating: int | None = Field(None, ge=1, le=10)
+    effort_level: int | None = Field(None, ge=1, le=10)
+    coach_feedback: str | None = None
+    improvement_areas: list[str] | None = None
+    session_goals: list[str] | None = None
+    goals_achieved: list[str] | None = None
+    next_session_focus: str | None = None
+    session_cost: float | None = Field(None, ge=0.0)
+    group_size: int | None = Field(None, ge=1)
+    start_time: time | None = None
+    end_time: time | None = None
+    data_quality_score: float | None = Field(None, ge=0.0, le=1.0)
+    manual_overrides: dict[str, Any] | None = None
+    validation_notes: str | None = None
+    energy_level: int | None = Field(None, ge=1, le=10)
+    notes: str | None = None
 
 
 class CricketCoachingEntryResponse(AppBaseModel):
@@ -215,238 +170,259 @@ class CricketCoachingEntryResponse(AppBaseModel):
 
 
 class CricketCoachingDataExtraction(AppBaseModel):
-    """Schema for structured cricket coaching data extraction from voice."""
+    """Schema for structured cricket coaching data extraction from voice input."""
 
-    session_type: str = Field(
-        ...,
-        description="Type of cricket session. Must be exactly one of: batting_drills, wicket_keeping, netting, personal_coaching, team_practice, other. Map similar terms: batting/technique -> batting_drills, keeping/gloves -> wicket_keeping, etc.",
-    )
-    duration_minutes: int = Field(..., description="Duration in minutes")
-    what_went_well: str = Field(..., description="What went well in the session")
-    areas_for_improvement: str = Field(..., description="Areas that need improvement")
-    skills_practiced: str = Field(..., description="Skills practiced during session")
-    self_assessment_score: str = Field(
-        ...,
-        description="Self-assessment score - use descriptive terms like 'poor', 'below average', 'good', 'excellent'",
-    )
-    confidence_level: str = Field(
-        ...,
-        description="Confidence level - use descriptive terms like 'very low', 'low', 'confident', 'very confident'",
-    )
-    focus_level: str = Field(
-        ...,
-        description="Focus level - use descriptive terms like 'distracted', 'okay', 'focused', 'very focused'",
-    )
-    mental_state: str = Field(..., description="Mental state during session")
-
-    # Optional extracted fields
-    coach_feedback: str | None = Field(None, description="Coach feedback if mentioned")
-    difficulty_level: str | None = Field(
+    session_type: Literal["batting", "bowling", "fielding", "fitness", "mental"] | None = Field(
         None,
-        description="Difficulty level - use descriptive terms like 'easy', 'moderate', 'challenging', 'very hard'",
+        description="Type of coaching session",
     )
-    learning_satisfaction: str | None = Field(
+    duration_minutes: int | None = Field(None, ge=5, le=480, description="Duration in minutes")
+    what_went_well: str | None = Field(None, description="What went well in the session")
+    areas_for_improvement: str | None = Field(None, description="Areas needing improvement")
+    self_assessment_score: int | None = Field(
         None,
-        description="Learning satisfaction - use descriptive terms like 'frustrated', 'satisfied', 'very satisfied'",
+        ge=1,
+        le=10,
+        description="Self-assessment score",
     )
-    notes: str | None = Field(None, description="Additional notes about the coaching session")
+    confidence_level: str | None = Field(None, description="Confidence level description")
+    focus_level: str | None = Field(None, description="Focus level description")
+    learning_satisfaction: str | None = Field(None, description="Learning satisfaction")
+    mental_state: str | None = Field(None, description="Mental state during session")
+    coach_feedback: str | None = Field(None, description="Feedback from coach")
+    skills_practiced: list[str] | None = Field(None, description="Skills practiced")
+    notes: str | None = Field(None, description="Additional notes")
 
 
 # Cricket Match Schemas
-class CricketMatchEntryCreate(AppBaseModel):
-    """Schema for creating cricket match performance entries."""
+class CricketMatchEntryBase(ActivityEntryBase):
+    """Base schema for cricket match entries."""
 
-    match_type: Literal["practice", "tournament", "school", "club", "other"]
-    opposition_strength: int = Field(..., ge=1, le=10, description="Opposition strength 1-10")
-    weather_conditions: str | None = Field(None, max_length=200, description="Weather conditions")
-    pitch_conditions: str | None = Field(None, max_length=200, description="Pitch conditions")
-    batting_order: int | None = Field(None, ge=1, le=11, description="Batting order position")
+    entry_type: EntryType = Field(default=EntryType.CRICKET_MATCH, description="Entry type")
+    match_format: MatchFormat = Field(..., description="Format of the match")
+    opposition_team: str = Field(..., description="Name of the opposition team")
+    venue: str = Field(..., description="Match venue")
+    home_away: str = Field(..., description="Home, away, or neutral venue")
+    result: str = Field(..., description="Match result (won, lost, draw, no_result)")
+    team_name: str = Field(..., description="Your team name")
 
-    # Batting statistics
+
+class CricketMatchEntryCreate(CricketMatchEntryBase):
+    """Schema for creating a cricket match entry."""
+
+    # Team performance
+    team_total: int | None = Field(None, ge=0, description="Team total score")
+    team_wickets: int | None = Field(None, ge=0, le=10, description="Team wickets lost")
+    team_overs: float | None = Field(None, ge=0.0, description="Team overs played")
+    opposition_total: int | None = Field(None, ge=0, description="Opposition total score")
+    opposition_wickets: int | None = Field(None, ge=0, le=10, description="Opposition wickets lost")
+    opposition_overs: float | None = Field(None, ge=0.0, description="Opposition overs played")
+
+    # Personal batting performance
+    batting_position: int | None = Field(None, ge=1, le=11, description="Batting position")
     runs_scored: int | None = Field(None, ge=0, description="Runs scored")
     balls_faced: int | None = Field(None, ge=0, description="Balls faced")
-    boundaries_4s: int | None = Field(None, ge=0, description="4s scored")
-    boundaries_6s: int | None = Field(None, ge=0, description="6s scored")
-    how_out: str | None = Field(None, max_length=200, description="How out (if applicable)")
-    key_shots_played: str | None = Field(None, max_length=500, description="Key shots played well")
-    batting_mistakes: str | None = Field(None, max_length=500, description="Batting mistakes made")
+    boundaries: int | None = Field(None, ge=0, description="Number of boundaries (4s)")
+    sixes: int | None = Field(None, ge=0, description="Number of sixes")
+    dismissal_type: str | None = Field(None, description="How you were dismissed")
+    strike_rate: float | None = Field(None, ge=0.0, description="Strike rate")
 
-    # Wicket keeping statistics
+    # Personal bowling performance
+    overs_bowled: float | None = Field(None, ge=0.0, description="Overs bowled")
+    runs_conceded: int | None = Field(None, ge=0, description="Runs conceded while bowling")
+    wickets_taken: int | None = Field(None, ge=0, description="Wickets taken")
+    economy_rate: float | None = Field(None, ge=0.0, description="Economy rate")
+    best_bowling: str | None = Field(None, description="Best bowling figures")
+
+    # Personal fielding performance
     catches_taken: int | None = Field(None, ge=0, description="Catches taken")
-    catches_dropped: int | None = Field(None, ge=0, description="Catches dropped")
-    stumpings: int | None = Field(None, ge=0, description="Stumpings completed")
-    byes_conceded: int | None = Field(None, ge=0, description="Byes conceded")
-    keeping_key_moments: str | None = Field(None, max_length=500, description="Key keeping moments")
+    run_outs: int | None = Field(None, ge=0, description="Run outs effected")
+    stumpings: int | None = Field(None, ge=0, description="Stumpings (if wicket keeper)")
+    fielding_position: str | None = Field(None, description="Fielding position")
 
-    # Mental state tracking
-    pre_match_nerves: int = Field(..., ge=1, le=10, description="Pre-match nerves level")
-    focus_during_batting: int | None = Field(None, ge=1, le=10, description="Focus during batting")
-    focus_during_keeping: int | None = Field(None, ge=1, le=10, description="Focus during keeping")
-    post_match_satisfaction: int = Field(..., ge=1, le=10, description="Post-match satisfaction")
-    mental_challenges: str | None = Field(
+    # Match conditions
+    weather_conditions: str | None = Field(None, description="Weather conditions")
+    pitch_conditions: str | None = Field(None, description="Pitch conditions")
+    toss_won_by: str | None = Field(None, description="Who won the toss")
+    elected_to: str | None = Field(None, description="Elected to bat or bowl")
+
+    # Performance ratings
+    batting_performance: int | None = Field(
         None,
-        max_length=500,
-        description="Mental challenges faced",
+        ge=1,
+        le=10,
+        description="Batting performance 1-10",
+    )
+    bowling_performance: int | None = Field(
+        None,
+        ge=1,
+        le=10,
+        description="Bowling performance 1-10",
+    )
+    fielding_performance: int | None = Field(
+        None,
+        ge=1,
+        le=10,
+        description="Fielding performance 1-10",
+    )
+    overall_performance: int | None = Field(
+        None,
+        ge=1,
+        le=10,
+        description="Overall performance 1-10",
     )
 
-    # Common fields
-    mental_state: Literal["excellent", "good", "okay", "poor"]
-    notes: str | None = Field(
-        None,
-        max_length=settings.validation.max_text_length,
-        description="Additional notes",
-    )
+    # Key moments and learnings
+    key_moments: list[str] | None = Field(None, description="Key moments in the match")
+    what_went_well: list[str] | None = Field(None, description="What went well")
+    areas_for_improvement: list[str] | None = Field(None, description="Areas for improvement")
+    captain_feedback: str | None = Field(None, description="Captain's feedback")
+    coach_feedback: str | None = Field(None, description="Coach's feedback")
 
+    # Match logistics
+    match_duration_hours: float | None = Field(None, ge=0.0, description="Match duration in hours")
+    start_time: time | None = Field(None, description="Match start time")
+    end_time: time | None = Field(None, description="Match end time")
+    match_fee: float | None = Field(None, ge=0.0, description="Match fee received")
+    travel_distance_km: float | None = Field(None, ge=0.0, description="Travel distance")
 
-class CricketMatchEntryRead(AppBaseModel):
-    """Schema for reading cricket match performance entries."""
-
-    id: int
-    session_id: str
-    user_id: str
-    match_type: str
-    opposition_strength: int
-    pre_match_nerves: int
-    post_match_satisfaction: int
-    mental_state: str
-    runs_scored: int | None
-    balls_faced: int | None
-    boundaries_4s: int | None
-    boundaries_6s: int | None
-    how_out: str | None
-    key_shots_played: str | None
-    catches_taken: int | None
-    catches_dropped: int | None
-    stumpings: int | None
-    notes: str | None
-    # Voice processing metadata
-    transcript: str
-    confidence_score: float
-    processing_duration: float | None
-    # Timestamps
-    created_at: datetime
-    updated_at: datetime | None
+    # Data quality tracking
+    processing_duration: float | None = Field(None, ge=0.0, description="Processing duration")
+    data_quality_score: float | None = Field(None, ge=0.0, le=1.0, description="Data quality score")
+    manual_overrides: dict[str, Any] | None = Field(None, description="Manual data overrides")
+    validation_notes: str | None = Field(None, description="Validation notes")
+    energy_level: int | None = Field(None, ge=1, le=10, description="Energy level 1-10")
+    notes: str | None = Field(None, description="Additional notes")
 
 
 class CricketMatchEntryUpdate(AppBaseModel):
-    """Schema for updating cricket match performance entries."""
+    """Schema for updating a cricket match entry."""
 
-    match_type: Literal["practice", "tournament", "school", "club", "other"] | None = None
-    opposition_strength: int | None = Field(
-        None,
-        ge=1,
-        le=10,
-        description="Opposition strength 1-10",
-    )
-    weather_conditions: str | None = Field(None, max_length=200, description="Weather conditions")
-    pitch_conditions: str | None = Field(None, max_length=200, description="Pitch conditions")
-    batting_order: int | None = Field(None, ge=1, le=11, description="Batting order position")
-    runs_scored: int | None = Field(None, ge=0, description="Runs scored")
-    balls_faced: int | None = Field(None, ge=0, description="Balls faced")
-    boundaries_4s: int | None = Field(None, ge=0, description="4s scored")
-    boundaries_6s: int | None = Field(None, ge=0, description="6s scored")
-    how_out: str | None = Field(None, max_length=200, description="How out (if applicable)")
-    key_shots_played: str | None = Field(None, max_length=500, description="Key shots played well")
-    batting_mistakes: str | None = Field(None, max_length=500, description="Batting mistakes made")
-    catches_taken: int | None = Field(None, ge=0, description="Catches taken")
-    catches_dropped: int | None = Field(None, ge=0, description="Catches dropped")
-    stumpings: int | None = Field(None, ge=0, description="Stumpings completed")
-    byes_conceded: int | None = Field(None, ge=0, description="Byes conceded")
-    keeping_key_moments: str | None = Field(None, max_length=500, description="Key keeping moments")
-    pre_match_nerves: int | None = Field(None, ge=1, le=10, description="Pre-match nerves level")
-    focus_during_batting: int | None = Field(None, ge=1, le=10, description="Focus during batting")
-    focus_during_keeping: int | None = Field(None, ge=1, le=10, description="Focus during keeping")
-    post_match_satisfaction: int | None = Field(
-        None,
-        ge=1,
-        le=10,
-        description="Post-match satisfaction",
-    )
-    mental_challenges: str | None = Field(
-        None,
-        max_length=500,
-        description="Mental challenges faced",
-    )
-    mental_state: Literal["excellent", "good", "okay", "poor"] | None = None
-    notes: str | None = Field(
-        None,
-        max_length=settings.validation.max_text_length,
-        description="Additional notes",
-    )
+    match_format: MatchFormat | None = None
+    opposition_team: str | None = None
+    venue: str | None = None
+    home_away: str | None = None
+    result: str | None = None
+    team_name: str | None = None
+    team_total: int | None = Field(None, ge=0)
+    team_wickets: int | None = Field(None, ge=0, le=10)
+    team_overs: float | None = Field(None, ge=0.0)
+    opposition_total: int | None = Field(None, ge=0)
+    opposition_wickets: int | None = Field(None, ge=0, le=10)
+    opposition_overs: float | None = Field(None, ge=0.0)
+    batting_position: int | None = Field(None, ge=1, le=11)
+    runs_scored: int | None = Field(None, ge=0)
+    balls_faced: int | None = Field(None, ge=0)
+    boundaries: int | None = Field(None, ge=0)
+    sixes: int | None = Field(None, ge=0)
+    dismissal_type: str | None = None
+    strike_rate: float | None = Field(None, ge=0.0)
+    overs_bowled: float | None = Field(None, ge=0.0)
+    runs_conceded: int | None = Field(None, ge=0)
+    wickets_taken: int | None = Field(None, ge=0)
+    economy_rate: float | None = Field(None, ge=0.0)
+    best_bowling: str | None = None
+    catches_taken: int | None = Field(None, ge=0)
+    run_outs: int | None = Field(None, ge=0)
+    stumpings: int | None = Field(None, ge=0)
+    fielding_position: str | None = None
+    weather_conditions: str | None = None
+    pitch_conditions: str | None = None
+    toss_won_by: str | None = None
+    elected_to: str | None = None
+    batting_performance: int | None = Field(None, ge=1, le=10)
+    bowling_performance: int | None = Field(None, ge=1, le=10)
+    fielding_performance: int | None = Field(None, ge=1, le=10)
+    overall_performance: int | None = Field(None, ge=1, le=10)
+    key_moments: list[str] | None = None
+    what_went_well: list[str] | None = None
+    areas_for_improvement: list[str] | None = None
+    captain_feedback: str | None = None
+    coach_feedback: str | None = None
+    match_duration_hours: float | None = Field(None, ge=0.0)
+    start_time: time | None = None
+    end_time: time | None = None
+    match_fee: float | None = Field(None, ge=0.0)
+    travel_distance_km: float | None = Field(None, ge=0.0)
+    data_quality_score: float | None = Field(None, ge=0.0, le=1.0)
+    manual_overrides: dict[str, Any] | None = None
+    validation_notes: str | None = None
+    energy_level: int | None = Field(None, ge=1, le=10)
+    notes: str | None = None
 
 
-class CricketMatchEntryResponse(AppBaseModel):
-    """Schema for cricket match entry responses."""
+class CricketMatchEntryRead(PrimaryKeyBase, TimestampBase, CricketMatchEntryBase):
+    """Schema for reading cricket match entry data."""
 
-    id: int
-    session_id: str
-    user_id: str
-    match_type: str
-    opposition_strength: int
-    weather_conditions: str | None
-    pitch_conditions: str | None
-    batting_order: int | None
+    team_total: int | None
+    team_wickets: int | None
+    team_overs: float | None
+    opposition_total: int | None
+    opposition_wickets: int | None
+    opposition_overs: float | None
+    batting_position: int | None
     runs_scored: int | None
     balls_faced: int | None
-    boundaries_4s: int | None
-    boundaries_6s: int | None
-    how_out: str | None
-    key_shots_played: str | None
-    batting_mistakes: str | None
+    boundaries: int | None
+    sixes: int | None
+    dismissal_type: str | None
+    strike_rate: float | None
+    overs_bowled: float | None
+    runs_conceded: int | None
+    wickets_taken: int | None
+    economy_rate: float | None
+    best_bowling: str | None
     catches_taken: int | None
-    catches_dropped: int | None
+    run_outs: int | None
     stumpings: int | None
-    byes_conceded: int | None
-    keeping_key_moments: str | None
-    pre_match_nerves: int
-    focus_during_batting: int | None
-    focus_during_keeping: int | None
-    post_match_satisfaction: int
-    mental_challenges: str | None
-    mental_state: str
-    notes: str | None
-    # Voice processing metadata
-    transcript: str
-    confidence_score: float
+    fielding_position: str | None
+    weather_conditions: str | None
+    pitch_conditions: str | None
+    toss_won_by: str | None
+    elected_to: str | None
+    batting_performance: int | None
+    bowling_performance: int | None
+    fielding_performance: int | None
+    overall_performance: int | None
+    key_moments: list[str] | None
+    what_went_well: list[str] | None
+    areas_for_improvement: list[str] | None
+    captain_feedback: str | None
+    coach_feedback: str | None
+    match_duration_hours: float | None
+    start_time: time | None
+    end_time: time | None
+    match_fee: float | None
+    travel_distance_km: float | None
     processing_duration: float | None
+    data_quality_score: float | None
+    manual_overrides: dict[str, Any] | None
+    validation_notes: str | None
+    energy_level: int | None
+    notes: str | None
 
 
 class CricketMatchDataExtraction(AppBaseModel):
-    """Schema for structured cricket match data extraction from voice."""
+    """Schema for structured cricket match data extraction from voice input."""
 
-    match_type: str = Field(
-        ...,
-        description="Type of match. Must be exactly one of: practice, tournament, school, club, other. Map similar terms: ODI/T20/Test -> tournament, friendly -> practice, etc.",
+    match_type: Literal["tournament", "practice", "friendly"] | None = Field(
+        None,
+        description="Type of match",
     )
-    opposition_strength: str = Field(
-        ...,
-        description="Opposition strength - use descriptive terms like 'very weak', 'weak', 'easy', 'average', 'strong', 'tough', 'very strong'",
-    )
-    pre_match_nerves: str = Field(
-        ...,
-        description="Pre-match nerves level - use descriptive terms like 'very nervous', 'nervous', 'confident', 'very confident', 'excited'",
-    )
-    post_match_satisfaction: str = Field(
-        ...,
-        description="Post-match satisfaction - use descriptive terms like 'disappointed', 'not satisfied', 'satisfied', 'very satisfied'",
-    )
-    mental_state: str = Field(..., description="Overall mental state during match")
-
-    # Optional batting statistics
+    opposition_strength: str | None = Field(None, description="Opposition strength description")
     runs_scored: int | None = Field(None, ge=0, description="Runs scored")
     balls_faced: int | None = Field(None, ge=0, description="Balls faced")
-    boundaries_4s: int | None = Field(None, ge=0, description="4s scored")
-    boundaries_6s: int | None = Field(None, ge=0, description="6s scored")
-    how_out: str | None = Field(None, description="How out (if applicable)")
-    key_shots_played: str | None = Field(None, description="Key shots played well")
-
-    # Optional keeping statistics
+    boundaries_4s: int | None = Field(None, ge=0, description="Number of 4s hit")
+    boundaries_6s: int | None = Field(None, ge=0, description="Number of 6s hit")
+    how_out: str | None = Field(None, description="How the player got out")
+    key_shots_played: str | None = Field(None, description="Key shots played")
     catches_taken: int | None = Field(None, ge=0, description="Catches taken")
     catches_dropped: int | None = Field(None, ge=0, description="Catches dropped")
-    stumpings: int | None = Field(None, ge=0, description="Stumpings completed")
-
-    # Additional notes
-    notes: str | None = Field(None, description="Additional notes about the match")
+    stumpings: int | None = Field(None, ge=0, description="Stumpings made")
+    pre_match_nerves: str | None = Field(None, description="Pre-match nerves description")
+    post_match_satisfaction: str | None = Field(None, description="Post-match satisfaction")
+    mental_state: str | None = Field(None, description="Mental state during match")
+    notes: str | None = Field(None, description="Additional notes")
 
 
 # Rest Day Schemas
@@ -502,7 +478,7 @@ class RestDayEntryCreate(AppBaseModel):
 class RestDayEntryRead(AppBaseModel):
     """Schema for reading rest day entries."""
 
-    id: int
+    id: UUID
     session_id: str
     user_id: str
     rest_type: str
@@ -572,7 +548,7 @@ class RestDayEntryUpdate(AppBaseModel):
 class RestDayEntryResponse(AppBaseModel):
     """Schema for rest day entry responses."""
 
-    id: int
+    id: UUID
     session_id: str
     user_id: str
     rest_type: str

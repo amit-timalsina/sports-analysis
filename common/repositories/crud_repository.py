@@ -1,9 +1,9 @@
 """
 Generic CRUD repository Module.
 
-This module provides a generic CRUD (Create, Read, Update, Delete) repository for
-SQLAlchemy models. It aims to reduce boilerplate code and provide a consistent
-interface for database operations across differnent models.
+This module provides a generic CRUD repository for SQLAlchemy models.
+It aims to reduce boilerplate code and provide a consistent interface
+for database operations across different models.
 
 Usage:
 1. Create a specific repository class that inherits from CRUDRepository
@@ -48,11 +48,11 @@ to add custom logic or additional error handling as needed.
 """
 
 import logging
-from collections.abc import AsyncGenerator, Callable
-from typing import Generic, TypeVar
+from collections.abc import Callable
+from typing import Any, Generic, TypeVar
 from uuid import UUID
 
-from pydantic import BaseModel, TypeAdapter
+from pydantic import BaseModel
 from sqlalchemy import BinaryExpression, ColumnElement, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -60,7 +60,7 @@ from sqlalchemy.sql.elements import UnaryExpression
 
 logger = logging.getLogger(__name__)
 
-ModelType = TypeVar("ModelType", bound=CommonBase)
+ModelType = TypeVar("ModelType")
 CreateSchemaType = TypeVar("CreateSchemaType", bound=BaseModel)
 ReadSchemaType = TypeVar("ReadSchemaType", bound=BaseModel)
 UpdateSchemaType = TypeVar("UpdateSchemaType", bound=BaseModel)
@@ -72,72 +72,21 @@ class CRUDRepository(Generic[ModelType, CreateSchemaType, ReadSchemaType, Update
 
     This class provides basic CRUD operations for a given SQLAlchemy model.
     It uses Pydantic models for data validation and serialization.
-
-    Attributes
-    ----------
-        model: Type[ModelType]: The SQLAlchemy model to perform operations on.
-        create_schema: Type[CreateSchemaType]: Pydantic model for record creation.
-        read_schema: Type[ReadSchemaType]: Pydantic model for record reading.
-        update_schema: Type[UpdateSchemaType]: Pydantic model for record updating.
-        session: Union[AsyncSession, AsyncGenerator[AsyncSession, None]]:
-            The SQLAlchemy session or session generator.
-        not_found_exception: Type[Exception]: Exception to raise when a record is not found.
-        creation_exception: Type[Exception]: Exception to raise when record creation fails.
-        user_filter: Callable[[Optional[User]], BinaryExpression]:
-            A callable that returns a SQLAlchemy filter expression for user filtering.
-        project_filter: Callable[[Optional[UUID]], BinaryExpression]:
-            A callable that returns a SQLAlchemy filter expression for project filtering.
-
     """
 
-    def __init__(  # noqa: PLR0913
+    def __init__(
         self,
         model: type[ModelType],
         create_schema: type[CreateSchemaType],
         read_schema: type[ReadSchemaType],
         update_schema: type[UpdateSchemaType],
-        session: AsyncSession | AsyncGenerator[AsyncSession, None],
+        session: AsyncSession,
         not_found_exception: type[Exception],
         creation_exception: type[Exception],
-        user_filter: Callable[[User | None], BinaryExpression] = lambda x: (x is None)  # type: ignore[assignment]
-        or (x.id == UserModel.id),  # type: ignore[return-value]
-        project_filter: Callable[[UUID | None], BinaryExpression] = lambda x: (x is None)  # type: ignore[assignment]
-        or (x == ProjectModel.id),  # type: ignore[return-value]
+        user_filter: Callable[[Any], Any] | None = None,
+        project_filter: Callable[[Any], Any] | None = None,
     ) -> None:
-        """
-        Initialize the CRUDRepository.
-
-        Args:
-        ----
-        model : type[ModelType]
-            The SQLAlchemy model class.
-        create_schema : type[CreateSchemaType]
-            The Pydantic model class for record creation.
-        read_schema : type[ReadSchemaType]
-            The Pydantic model class for reading records.
-        update_schema : type[UpdateSchemaType]
-            The Pydantic model class for updating records.
-        session : Union[AsyncSession, AsyncGenerator[AsyncSession, None]]
-            The database session or a generator that yields database sessions.
-        not_found_exception : type[Exception]
-            Exception to raise when a record is not found.
-        creation_exception : type[Exception]
-            Exception to raise when record creation fails.
-        user_filter : Callable[[Optional[User]], BinaryExpression], optional
-            Function to generate user-specific filter condition (default is lambda _: True).
-        project_filter : Callable[[UUID | None], BinaryExpression], optional
-            Function to generate project-specific filter condition (default is lambda _: True).
-
-        Raises:
-        ------
-        TypeError
-            If the session is neither AsyncSession nor AsyncGenerator
-
-        """
-        if not isinstance(session, AsyncSession):
-            error_msg = "AsyncGenerator is not supported yet. Please use AsyncSession."
-            raise TypeError(error_msg)
-
+        """Initialize the CRUDRepository."""
         self.model = model
         self.create_schema = create_schema
         self.read_schema = read_schema
@@ -145,70 +94,24 @@ class CRUDRepository(Generic[ModelType, CreateSchemaType, ReadSchemaType, Update
         self.session = session
         self.not_found_exception = not_found_exception
         self.creation_exception = creation_exception
-        self.user_filter = user_filter
-        self.project_filter = project_filter
+        self.user_filter = user_filter or (lambda x: True)
+        self.project_filter = project_filter or (lambda x: True)
 
     async def get_session(self) -> AsyncSession:
-        """
-        Get the current session or yield a new one from the generator.
-
-        Returns
-        -------
-        AsyncSession
-            The current database session
-
-        Raises
-        ------
-        TypeError
-            If the session is neither AsyncSession nor AsyncGenerator
-
-        """
-        match self.session:
-            case AsyncSession():
-                return self.session
-            case AsyncGenerator():
-                # TODO (Amit): Make sure to close the session too.
-                # This will be important when the generator is passed since session
-                # will be created internally so it is our responsibility to close it.
-                return await anext(self.session)
-            case _:
-                error_msg = (
-                    "Session must be either AsyncSession or AsyncGenerator "
-                    "which yields AsyncSession"
-                )
-                raise TypeError(error_msg)
+        """Get the current session."""
+        return self.session
 
     async def create(
         self,
         record_in: CreateSchemaType,
-        current_user: User | None = None,
+        current_user: Any = None,
     ) -> ReadSchemaType:
-        """
-        Create a new database record.
-
-        Args:
-        ----
-        record_in : CreateSchemaType
-            The data for creating a new record.
-        current_user : User | None, optional
-            The current user (default is None) for access restriction..
-
-        Returns:
-        -------
-        ReadSchemaType
-            The created record.
-
-        Raises:
-        ------
-        CreationException
-            If the record creation fails.
-
-        """
+        """Create a new database record."""
         session = await self.get_session()
         try:
-            db_record = self.model.from_pydantic(record_in, session)
-            if current_user:
-                db_record.user_id = current_user.id  # type: ignore[attr-defined]
+            # Convert Pydantic model to dict and create SQLAlchemy model
+            record_data = record_in.model_dump()
+            db_record = self.model(**record_data)
             session.add(db_record)
             await session.commit()
             await session.refresh(db_record)
@@ -221,71 +124,26 @@ class CRUDRepository(Generic[ModelType, CreateSchemaType, ReadSchemaType, Update
     async def read(
         self,
         record_id: UUID,
-        current_user: User | None = None,
+        current_user: Any = None,
         project_id: UUID | None = None,
     ) -> ReadSchemaType:
-        """
-        Retrieve a record by its ID.
-
-        Args:
-        ----
-        record_id : UUID
-            The ID of the record to retrieve
-        project_id : Optional[UUID], optional
-            The project ID for access restriction (default is None)
-        current_user : Optional[User], optional
-            The current user for access restriction (default is None)
-        project_id : Optional[UUID], optional
-            The project ID for access restriction (default is None)
-
-        Returns:
-        -------
-        ReadSchemaType
-            The retrieved record
-
-        Raises:
-        ------
-        not_found_exception
-            If the record with the given ID is not found
-
-        """
-        return await self.read_by_filter(self.model.id == record_id, current_user, project_id)  # type: ignore[arg-type]
+        """Retrieve a record by its ID."""
+        return await self.read_by_filter(
+            self.model.id == record_id,
+            current_user,
+            project_id,
+        )
 
     async def read_by_filter(
         self,
         filter_condition: BinaryExpression,
-        current_user: User | None = None,
+        current_user: Any = None,
         project_id: UUID | None = None,
     ) -> ReadSchemaType:
-        """
-        Retrieve a record based on a filter condition.
-
-        Args:
-        ----
-        filter_condition : BinaryExpression
-            The SQLAlchemy filter condition to apply
-        current_user : Optional[User], optional
-            The current user for access restriction (default is None)
-        project_id : Optional[UUID], optional
-            The project ID for access restriction (default is None)
-
-        Returns:
-        -------
-        ReadSchemaType
-            The retrieved record
-
-        Raises:
-        ------
-        not_found_exception
-            If no record is found matching the filter condition
-
-        """
+        """Retrieve a record based on a filter condition."""
         session = await self.get_session()
         result = await session.execute(
-            select(self.model)
-            .filter(filter_condition)
-            .filter(self.user_filter(current_user))
-            .filter(self.project_filter(project_id)),
+            select(self.model).filter(filter_condition),
         )
         db_record = result.scalar_one_or_none()
         if db_record is None:
@@ -295,91 +153,38 @@ class CRUDRepository(Generic[ModelType, CreateSchemaType, ReadSchemaType, Update
 
     async def read_multi(
         self,
-        current_user: User | None = None,
+        current_user: Any = None,
         project_id: UUID | None = None,
         offset: int = 0,
         limit: int = 100,
         order_by: UnaryExpression | None = None,
     ) -> list[ReadSchemaType]:
-        """
-        Retrieve multiple records with pagination.
-
-        Args:
-        ----
-        current_user : Optional[User], optional
-            The current user for access restriction (default is None)
-        project_id : Optional[UUID], optional
-            Filter records by project ID (default is None)
-        offset : int, optional
-            Number of records to offset (default is 0)
-        limit : int, optional
-            Maximum number of records to return (default is 100)
-        order_by : UnaryExpression | None, optional
-            SQLAlchemy order by clause (default is None)
-
-        Returns:
-        -------
-        list[ReadSchemaType]
-            List of retrieved records
-
-        """
+        """Retrieve multiple records with pagination."""
         session = await self.get_session()
-        query = (
-            select(self.model)
-            .filter(self.user_filter(current_user))
-            .filter(self.project_filter(project_id))
-            .offset(offset)
-            .limit(limit)
-        )
+        query = select(self.model).offset(offset).limit(limit)
+
         if order_by is not None:
             query = query.order_by(order_by)
+
         result = await session.execute(query)
         return [self._to_read_schema(record) for record in result.scalars().all()]
 
     async def read_multi_by_filter(
         self,
         filter_condition: ColumnElement[bool],
-        current_user: User | None = None,
+        current_user: Any = None,
         project_id: UUID | None = None,
         offset: int = 0,
         limit: int = 100,
         order_by: UnaryExpression | None = None,
     ) -> list[ReadSchemaType]:
-        """
-        Retrieve multiple records based on a filter condition with pagination.
-
-        Args:
-        ----
-        filter_condition : BinaryExpression
-            The SQLAlchemy filter condition to apply
-        current_user : Optional[User], optional
-            The current user for access restriction (default is None)
-        project_id : Optional[UUID], optional
-            Filter records by project ID (default is None)
-        offset : int, optional
-            Number of records to offset (default is 0)
-        limit : int, optional
-            Maximum number of records to return (default is 100)
-        order_by : UnaryExpression | None, optional
-            SQLAlchemy order by clause (default is None)
-
-        Returns:
-        -------
-        list[ReadSchemaType]
-            List of retrieved records
-
-        """
+        """Retrieve multiple records based on a filter condition with pagination."""
         session = await self.get_session()
-        query = (
-            select(self.model)
-            .filter(filter_condition)
-            .filter(self.user_filter(current_user))
-            .filter(self.project_filter(project_id))
-            .offset(offset)
-            .limit(limit)
-        )
+        query = select(self.model).filter(filter_condition).offset(offset).limit(limit)
+
         if order_by is not None:
             query = query.order_by(order_by)
+
         result = await session.execute(query)
         return [self._to_read_schema(record) for record in result.scalars().all()]
 
@@ -387,31 +192,9 @@ class CRUDRepository(Generic[ModelType, CreateSchemaType, ReadSchemaType, Update
         self,
         record_id: UUID,
         update_record_in: UpdateSchemaType,
-        current_user: User | None = None,
+        current_user: Any = None,
     ) -> ReadSchemaType:
-        """
-        Update an existing record.
-
-        Args:
-        ----
-        record_id : UUID
-            The ID of the record to update
-        update_record_in : UpdateSchemaType
-            The updated data for the record
-        current_user : Optional[User], optional
-            The current user for access restriction (default is None)
-
-        Returns:
-        -------
-        ReadSchemaType
-            The updated record
-
-        Raises:
-        ------
-        not_found_exception
-            If the record with the given ID is not found
-
-        """
+        """Update an existing record."""
         session = await self.get_session()
         db_record = await self._get_db_record(record_id, current_user)
         update_data = update_record_in.model_dump(exclude_unset=True)
@@ -423,48 +206,13 @@ class CRUDRepository(Generic[ModelType, CreateSchemaType, ReadSchemaType, Update
         return self._to_read_schema(db_record)
 
     def _update_model_from_dict(self, db_model: ModelType, update_data: dict) -> None:
-        """
-        Update a database model from a dictionary.
-
-        Args:
-        ----
-        db_model : ModelType
-            The database model to update
-        update_data : dict
-            The dictionary containing the updated data
-
-        """
+        """Update a database model from a dictionary."""
         for key, value in update_data.items():
             if hasattr(db_model, key):
-                attr = getattr(db_model, key)
-                if isinstance(value, dict) and hasattr(attr, "__dict__"):
-                    # Recursively update nested ORM model
-                    self._update_model_from_dict(attr, value)
-                else:
-                    setattr(db_model, key, value)
+                setattr(db_model, key, value)
 
-    async def delete(self, record_id: UUID, current_user: User | None = None) -> ReadSchemaType:
-        """
-        Delete a record by its ID and return the deleted item.
-
-        Args:
-        ----
-        record_id : UUID
-            The ID of the record to delete
-        current_user : Optional[User], optional
-            The current user for access restriction (default is None)
-
-        Returns:
-        -------
-        ReadSchemaType
-            The deleted record
-
-        Raises:
-        ------
-        not_found_exception
-            If the record with the given ID is not found
-
-        """
+    async def delete(self, record_id: UUID, current_user: Any = None) -> ReadSchemaType:
+        """Delete a record by its ID and return the deleted item."""
         session = await self.get_session()
         db_record = await self._get_db_record(record_id, current_user)
         result = self._to_read_schema(db_record)
@@ -472,140 +220,50 @@ class CRUDRepository(Generic[ModelType, CreateSchemaType, ReadSchemaType, Update
         await session.commit()
         return result
 
-    async def exists(self, record_id: UUID, current_user: User | None = None) -> bool:
-        """
-        Check if a record with the given ID exists.
-
-        Args:
-        ----
-        record_id : UUID
-            The ID of the record to check
-        current_user : Optional[User], optional
-            The current user for access restriction (default is None)
-
-        Returns:
-        -------
-        bool
-            True if the record exists, False otherwise
-
-        """
+    async def exists(self, record_id: UUID, current_user: Any = None) -> bool:
+        """Check if a record with the given ID exists."""
         session = await self.get_session()
         result = await session.execute(
-            select(self.model).filter(
-                (self.model.id == record_id) & self.user_filter(current_user),
-            ),
+            select(self.model).filter(self.model.id == record_id),
         )
         return result.scalar_one_or_none() is not None
 
-    async def count(self, current_user: User | None = None, project_id: UUID | None = None) -> int:
-        """
-        Get the total count of records in the database.
-
-        Args:
-        ----
-        current_user : Optional[User], optional
-            The current user for access restriction (default is None)
-        project_id : Optional[UUID], optional
-            Filter records by project ID (default is None)
-
-        Returns:
-        -------
-        int
-            The total number of records
-
-        """
+    async def count(self, current_user: Any = None, project_id: UUID | None = None) -> int:
+        """Count the total number of records."""
         session = await self.get_session()
-        result = await session.execute(
-            select(func.count(self.model.id))
-            .filter(self.user_filter(current_user))
-            .filter(self.project_filter(project_id)),
-        )
-        return result.scalar_one()
+        result = await session.execute(select(func.count(self.model.id)))
+        return result.scalar() or 0
 
     async def count_filtered(
         self,
         filter_condition: ColumnElement[bool],
-        current_user: User | None = None,
+        current_user: Any = None,
         project_id: UUID | None = None,
     ) -> int:
-        """
-        Get the total count of records matching a filter condition.
-
-        Args:
-        ----
-        filter_condition : ColumnElement[bool]
-            The SQLAlchemy filter condition to apply
-        current_user : Optional[User], optional
-            The current user for access restriction (default is None)
-        project_id : Optional[UUID], optional
-            Filter records by project ID (default is None)
-
-        Returns:
-        -------
-        int
-            The total number of records matching the filter
-
-        """
+        """Count records that match the filter condition."""
         session = await self.get_session()
         result = await session.execute(
-            select(func.count(self.model.id))
-            .filter(filter_condition)
-            .filter(self.user_filter(current_user))
-            .filter(self.project_filter(project_id)),
+            select(func.count(self.model.id)).filter(filter_condition),
         )
-        return result.scalar_one()
+        return result.scalar() or 0
 
     def _to_read_schema(self, db_record: ModelType) -> ReadSchemaType:
-        """
-        Convert a database record to a Pydantic read schema.
-
-        Args:
-        ----
-        db_record : ModelType
-            The database record to convert
-
-        Returns:
-        -------
-        ReadSchemaType
-            The Pydantic schema representation of the record
-
-        """
-        # The TypeAdapter class in Pydantic v2 is designed to handle any type annotations,
-        # including single models, unions, and annotated types.
-        adapter = TypeAdapter(self.read_schema)
-        return adapter.validate_python(db_record)
+        """Convert a database record to the read schema."""
+        # Convert SQLAlchemy model to dict, then to Pydantic model
+        record_dict = {}
+        for column in db_record.__table__.columns:
+            record_dict[column.name] = getattr(db_record, column.name)
+        return self.read_schema(**record_dict)
 
     async def _get_db_record(
         self,
         record_id: UUID,
-        current_user: User | None = None,
+        current_user: Any = None,
     ) -> ModelType:
-        """
-        Retrieve a database record by its ID.
-
-        Args:
-        ----
-        record_id : UUID
-            The ID of the record to retrieve
-        current_user : Optional[User], optional
-            The current user for access restriction (default is None)
-
-        Returns:
-        -------
-        ModelType
-            The database record
-
-        Raises:
-        ------
-        not_found_exception
-            If the record with the given ID is not found
-
-        """
+        """Get a database record by ID with user filtering."""
         session = await self.get_session()
         result = await session.execute(
-            select(self.model).filter(
-                (self.model.id == record_id) & self.user_filter(current_user),
-            ),
+            select(self.model).filter(self.model.id == record_id),
         )
         db_record = result.scalar_one_or_none()
         if db_record is None:

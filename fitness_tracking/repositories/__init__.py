@@ -1,17 +1,15 @@
-"""Repositories for fitness tracking."""
+"""Fitness tracking repositories for data access."""
 
-from .cricket_repository import (
-    CricketAnalyticsRepository,
-    CricketCoachingRepository,
-    CricketMatchRepository,
-    RestDayRepository,
+from .activity_repository import (
+    CricketCoachingEntryRepository,
+    CricketMatchEntryRepository,
+    FitnessEntryRepository,
+    RestDayEntryRepository,
 )
-from .fitness_repository import FitnessRepository
 
 __all__ = (
-    "CricketAnalyticsRepository",
-    "CricketCoachingRepository",
-    "CricketMatchRepository",
-    "FitnessRepository",
-    "RestDayRepository",
+    "CricketCoachingEntryRepository",
+    "CricketMatchEntryRepository",
+    "FitnessEntryRepository",
+    "RestDayEntryRepository",
 )

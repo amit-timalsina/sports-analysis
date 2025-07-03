@@ -344,6 +344,8 @@
         let mediaRecorder = null;
         let audioStream = null;
         let currentSessionId = 'session_' + Date.now();
+        // Turn counter for conversation flow visualization
+        let flowTurn = 0;
 
         // Voice modal functions
         function openVoiceModal(entryType) {
@@ -440,8 +442,15 @@
                     updateRecordingVisualization(true);
                     break;
                     
-                case 'transcript_ready':
+                case 'transcript_ready': // legacy name
+                case 'transcription_completed':
+                    // Display transcript in modal
                     showTranscript(data.data.transcript);
+
+                    // Add to conversation flow
+                    flowTurn += 1;
+                    addConversationTurn(flowTurn, data.data.transcript, 'answer');
+
                     updateStatus('Processing data...', 'info');
                     break;
                     
@@ -620,6 +629,9 @@
             if (type === 'question') {
                 content_el.innerHTML = `<div class="turn-question">${content}</div>`;
                 indicator.style.background = 'var(--primary-color)';
+            } else if (type === 'answer') {
+                content_el.innerHTML = `<div class="turn-answer">${content}</div>`;
+                indicator.style.background = 'var(--info-color, #3b82f6)';
             } else if (type === 'completion') {
                 content_el.innerHTML = `<div class="turn-completion">${content}</div>`;
                 indicator.style.background = 'var(--success-color)';

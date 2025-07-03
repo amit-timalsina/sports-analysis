@@ -21,10 +21,10 @@ class DatabaseSettings(AppBaseSettings):
     )
 
     host: str = Field(default="localhost", description="Database host")
-    port: int = Field(default=8432, description="Database port")
+    port: int = Field(default=9432, description="Database port")
     name: str = Field(default="cricket_fitness", description="Database name")
-    username: str = Field(default="postgres", description="Database username")
-    password: str = Field(default="postgres", description="Database password")
+    username: str = Field(default="user", description="Database username")
+    password: str = Field(default="password", description="Database password")
     driver: str = Field(default="postgresql+asyncpg", description="Database driver")
     echo: bool = Field(default=False, description="Enable SQL query logging")
     pool_size: int = Field(default=10, description="Connection pool size")
