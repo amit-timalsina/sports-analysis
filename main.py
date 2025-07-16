@@ -26,6 +26,7 @@ from pydantic import ValidationError
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from auth.routers.user_router import router as user_router
 from common.config.settings import settings
 from common.exceptions import AppError
 from common.schemas import SuccessResponse
@@ -129,6 +130,9 @@ async def internal_server_error_handler(_request: Request, exc: Exception) -> Pl
 
 
 # Routes
+app.include_router(router=user_router, prefix="/api/auth")
+
+
 @app.get("/", response_class=HTMLResponse)
 async def root() -> HTMLResponse:
     """Serve the main web interface."""
