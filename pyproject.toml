@@ -9,53 +9,39 @@ packages = [{include = "app"}]
 
 [tool.poetry.dependencies]
 python = "^3.11"
-
-# Core Framework - FastAPI + HTMX
 fastapi = "^0.109.0"
 uvicorn = {extras = ["standard"], version = "^0.27.0"}  # Includes uvloop, httptools, websockets, watchfiles
-
-# WebSocket & HTTP Support
 websockets = "^12.0"
 python-multipart = "^0.0.6"  # For file uploads and form data
 jinja2 = "^3.1.2"  # Template engine
-
-# Database - PostgreSQL + SQLAlchemy 2.0
 psycopg = {extras = ["binary"], version = "^3.1.0"}  # PostgreSQL adapter (modern psycopg3)
 sqlalchemy = "^2.0.25"  # ORM with async support
 sqlmodel = "^0.0.14"  # SQLModel for modern database models
 alembic = "^1.13.0"  # Database migrations
-
-# AI/ML and Voice Processing
 openai = "^1.12.0"  # OpenAI API with structured outputs
 librosa = "^0.10.1"  # Audio analysis and processing
 soundfile = "^0.12.1"  # Audio file I/O (required by librosa)
 numpy = "^1.24.0"  # Numerical computations
 scipy = "^1.11.0"  # Scientific computing (required by librosa)
-
-# Data Processing & Validation
-pydantic = "^2.5.0"  # Data validation with v2 features
+pydantic = {extras = ["email"], version = "^2.11.7"}  # Data validation with v2 features
 pydantic-settings = "^2.1.0"  # Settings management
 pandas = "^2.1.0"  # Data manipulation and analysis
-
-# Security & Authentication
 python-jose = {extras = ["cryptography"], version = "^3.3.0"}  # JWT handling
 passlib = {extras = ["bcrypt"], version = "^1.7.4"}  # Password hashing
-
-# HTTP Client & Async Support
 httpx = "^0.26.0"  # Async HTTP client
 aiofiles = "^23.2.1"  # Async file operations
-
-# Environment & Configuration
 python-dotenv = "^1.0.0"  # Environment variable loading
 pyyaml = "^6.0.1"  # YAML configuration support
-
-# Monitoring & Logging
 structlog = "^23.2.0"  # Structured logging
 rich = "^13.7.0"  # Beautiful console output
 langfuse = "^3.0.8"
 asyncpg = "^0.30.0"
 aiosqlite = "^0.21.0"
 svcs = "^25.1.0"
+phonenumbers = "^9.0.9"
+pydantic-extra-types = "^2.10.5"
+pyjwt = "^2.10.1"
+supabase = "^2.16.0"
 
 [tool.poetry.group.dev.dependencies]
 # Testing
