@@ -5,6 +5,8 @@ import svcs
 from fastapi import FastAPI
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from auth.repositories.user_repository import UserRepository
+from auth.services.supabase import AuthSupabaseService
 from database.session import get_session
 from voice_processing.repositories.conversation_repository import (
     ConversationAnalyticsRepository,
@@ -33,6 +35,8 @@ async def lifespan(_: FastAPI, registry: svcs.Registry) -> AsyncGenerator[None, 
     """
     # Register Dependecies
     registry.register_factory(AsyncSession, get_session)
+    registry.register_factory(AuthSupabaseService, AuthSupabaseService.get_as_dependency)
+    registry.register_factory(UserRepository, UserRepository.get_as_dependency)
     registry.register_factory(ConversationRepository, ConversationRepository.get_as_dependency)
     registry.register_factory(
         ConversationMessageRepository,
