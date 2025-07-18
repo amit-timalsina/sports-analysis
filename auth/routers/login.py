@@ -1,19 +1,26 @@
 import logging
 
-from fastapi import APIRouter, FastAPI, HTTPException
+from fastapi import APIRouter, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from supabase import Client, create_client
 
+from auth.config.supabase import get_supabase_settings
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["authentication"])
 
+
+# Initialize Supabase client with settings from environment variables
+supabase_settings = get_supabase_settings()
+
+
 # Supabase client
 supabase: Client = create_client(
-    "https://mlinadgevpaabqrqgogb.supabase.co",
-    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1saW5hZGdldnBhYWJxcnFnb2diIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTI2NzcxMjQsImV4cCI6MjA2ODI1MzEyNH0.qLCOWiHp4tCez0Y1j5bwgc58URR9JsBQDehKaWQbq3c",
+    supabase_settings.url,
+    supabase_settings.key,
 )
 
 
