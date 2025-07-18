@@ -18,9 +18,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated
 
-import svcs
-from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
-from fastapi.middleware.cors import CORSMiddleware
+from fastapi import Depends, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from langfuse import observe  # type: ignore[import-untyped]
@@ -28,13 +26,13 @@ from pydantic import ValidationError
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app_factory.factory import create_app
 from auth.routers.login import router as login
 from auth.routers.user_router import router as user_router
 from common.config.settings import settings
 from common.exceptions import AppError
 from common.schemas import SuccessResponse
 from database.session import get_session
-from dependency_injection import dependencies_registry, lifespan
 from fitness_tracking.repositories import (
     CricketCoachingEntryRepository,
     CricketMatchEntryRepository,
@@ -71,25 +69,8 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-# Create FastAPI app with settings-based configuration
-app = FastAPI(
-    title=settings.app.title,
-    description=settings.app.description,
-    version=settings.app.version,
-    lifespan=svcs.fastapi.lifespan(lifespan=lifespan, registry=dependencies_registry),
-    docs_url="/api/docs" if not settings.app.is_production else None,  # type: ignore[truthy-function]
-    redoc_url="/api/redoc" if not settings.app.is_production else None,  # type: ignore[truthy-function]
-    debug=settings.app.debug,
-)
+app = create_app()
 
-# CORS middleware with settings
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=settings.app.cors_origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 
 # Mount static files
 static_path = Path("static")
