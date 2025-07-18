@@ -10,6 +10,8 @@ and intelligent data extraction.
 """
 
 import json
+
+# supabase client import
 import logging
 import uuid
 from datetime import UTC, datetime
@@ -26,6 +28,7 @@ from pydantic import ValidationError
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from auth.routers.login import router as login
 from auth.routers.user_router import router as user_router
 from common.config.settings import settings
 from common.exceptions import AppError
@@ -130,10 +133,20 @@ async def internal_server_error_handler(_request: Request, exc: Exception) -> Pl
 
 
 # Routes
+app.include_router(router=login)
 app.include_router(router=user_router, prefix="/api/auth")
 
 
 @app.get("/", response_class=HTMLResponse)
+async def serve_index() -> HTMLResponse:
+    """Serve the authentication page as the main entry point."""
+    html_file = static_path / "authentication.html"
+    if html_file.exists():
+        return HTMLResponse(content=html_file.read_text(), status_code=200)
+    return HTMLResponse(content="""basic login page""")
+
+
+@app.get("/home", response_class=HTMLResponse)
 async def root() -> HTMLResponse:
     """Serve the main web interface."""
     html_file = static_path / "index.html"
