@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import JSON, DateTime, ForeignKey, String
+from sqlalchemy import JSON, UUID, DateTime, ForeignKey, String
 from sqlalchemy import Enum as SA_Enum
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -17,7 +17,7 @@ class ActivityEntryBase(ProductionBase):
     __abstract__ = True
 
     # User and session identification
-    user_id: Mapped[str] = mapped_column(String, index=True)
+    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), index=True)
     session_id: Mapped[str] = mapped_column(String, index=True)
 
     # Conversation relationship (strengthened - required)
