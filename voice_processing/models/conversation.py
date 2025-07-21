@@ -8,6 +8,7 @@ from sqlalchemy import JSON, DateTime, ForeignKey, String, func
 from sqlalchemy import UUID as SA_UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from auth.models.user import User
 from database.base import ProductionBase
 from voice_processing.schemas.conversation_detail_enums import (
     ActivityType,
@@ -25,7 +26,7 @@ class Conversation(ProductionBase):
 
     # Session identification
     session_id: Mapped[str] = mapped_column(String, unique=True, index=True)
-    user_id: Mapped[str] = mapped_column(String, index=True)
+    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), index=True)
 
     # Conversation metadata
     activity_type: Mapped[ActivityType] = mapped_column(index=True)
@@ -219,7 +220,7 @@ class ConversationAnalytics(ProductionBase):
 
     # Time period for analytics
     date: Mapped[datetime] = mapped_column(DateTime, index=True)
-    user_id: Mapped[str | None] = mapped_column(String, index=True)
+    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), index=True)
 
     # Basic conversation metrics
     total_conversations: Mapped[int] = mapped_column(default=0)
