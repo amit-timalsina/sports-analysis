@@ -21,8 +21,7 @@ if config.config_file_name is not None:
 # add your model's MetaData object here
 # for 'autogenerate' support
 from auth.models import *
-from fitness_tracking.models.cricket import *
-from fitness_tracking.models.fitness import *
+from fitness_tracking.models import *
 from voice_processing.models.conversation import *
 
 target_metadata = ProductionBase.metadata

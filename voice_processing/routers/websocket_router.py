@@ -8,24 +8,34 @@ import logging
 from datetime import UTC, datetime
 from typing import Annotated
 
+import svcs
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
 from langfuse import observe
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from auth.dependencies.security import get_current_user
+from auth.schemas.user import User
 from common.config.settings import settings
 from database.session import get_session
-from fitness_tracking.repositories import (
-    CricketCoachingEntryRepository,
+from fitness_tracking.repositories.cricket_coaching_repository import CricketCoachingEntryRepository
+from fitness_tracking.repositories.cricket_match_repository import (
     CricketMatchEntryRepository,
-    FitnessEntryRepository,
-    RestDayEntryRepository,
 )
+from fitness_tracking.repositories.fitness_repository import FitnessEntryRepository
+from fitness_tracking.repositories.rest_day_repository import RestDayEntryRepository
 from voice_processing.repositories.conversation_repository import (
     ConversationMessageRepository,
     ConversationRepository,
     ConversationTurnRepository,
 )
-from voice_processing.schemas.conversation import ActivityType, ConversationResult
+from voice_processing.schemas.conversation import (
+    ActivityType,
+    ConversationCreate,
+    ConversationRead,
+    ConversationResult,
+    ConversationTurnCreate,
+    ConversationTurnRead,
+)
 from voice_processing.schemas.processing import WebSocketMessage
 from voice_processing.services.completion_service import ConversationCompletionService
 from voice_processing.services.conversation_service import conversation_service
@@ -33,10 +43,10 @@ from voice_processing.services.openai_service import openai_service
 from voice_processing.websocket.manager import connection_manager
 
 logger = logging.getLogger(__name__)
-router = APIRouter(tags=["voice-websocket"])
+router = APIRouter(prefix="/api/voice_ws", tags=["voice_ws"])
 
 
-@router.websocket("/ws/voice/{session_id}")
+@router.websocket("/ws/{session_id}")
 @observe(capture_input=False, capture_output=False)
 async def voice_websocket_endpoint(
     websocket: WebSocket,
@@ -464,3 +474,40 @@ async def handle_complete_audio_processing(session_id: str, db: AsyncSession) ->
         await connection_manager.send_message(error_message, session_id)
         # Clear the buffer on error to reset state
         connection_manager.clear_audio_buffer(session_id)
+
+
+# test save conversation
+# test save conversation turns
+# test save entry
+# - fitness
+# - cricket match
+# - cricket coaching
+# - rest day
+
+
+@router.post("/test/save_conversation")
+async def test_save_conversation(
+    conversation_create: ConversationCreate,
+    dep_container: svcs.fastapi.DepContainer,
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> ConversationRead:
+    """Test save conversation."""
+    conversation_repo = await dep_container.aget(ConversationRepository)
+    return await conversation_repo.create(
+        conversation_create,
+        current_user,
+    )
+
+
+@router.post("/test/save_conversation_turns")
+async def test_save_conversation_turns(
+    conversation_turn_create: ConversationTurnCreate,
+    dep_container: svcs.fastapi.DepContainer,
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> ConversationTurnRead:
+    """Test save conversation turns."""
+    conversation_turn_repo = await dep_container.aget(ConversationTurnRepository)
+    return await conversation_turn_repo.create(
+        conversation_turn_create,
+        current_user,
+    )

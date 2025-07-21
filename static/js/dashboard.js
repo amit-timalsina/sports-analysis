@@ -89,7 +89,63 @@ class MobileDashboard {
         if (!response.ok) {
             throw new Error(`Failed to load dashboard: ${response.statusText}`);
         }
-        return await response.json();
+        const data = await response.json();
+        // Adapt the backend response to the legacy format used throughout the dashboard
+        return this.transformDashboardResponse(data);
+    }
+
+    /**
+     * Transforms the newer backend dashboard response into the legacy structure
+     * that the rest of the dashboard rendering logic expects. This avoids large-
+     * scale refactors across the file while we progressively migrate the API.
+     *
+     * @param {object} data Raw response from /api/dashboard
+     * @returns {object} Transformed response with legacy keys (activity_summary, recent_entries, quick_insights)
+     */
+    transformDashboardResponse(data) {
+        if (!data || !data.data) return data;
+
+        const d = data.data;
+
+        // 1. Map the new "this_week" block -> legacy "activity_summary"
+        if (d.this_week) {
+            d.activity_summary = {
+                fitness_sessions: d.this_week.fitness_sessions || 0,
+                cricket_coaching_sessions: d.this_week.coaching_sessions || 0,
+                matches_played: d.this_week.matches_played || 0,
+                rest_days: d.this_week.rest_days || 0,
+                average_energy_level: d.this_week.average_energy_level || 0,
+            };
+        }
+
+        // 2. Map the new "recent_activities" block -> legacy "recent_entries"
+        if (d.recent_activities) {
+            // Helper to normalize each entry type string
+            const normalizeType = (raw, fallback) => {
+                if (!raw || typeof raw !== 'string') return fallback;
+                return raw.toLowerCase();
+            };
+
+            const normalizeEntries = (entries, expectedType) =>
+                (entries || []).map((e) => ({
+                    ...e,
+                    type: expectedType, // ensure consistent type string for frontend
+                }));
+
+            d.recent_entries = {
+                fitness: normalizeEntries(d.recent_activities.fitness, 'fitness'),
+                cricket_coaching: normalizeEntries(d.recent_activities.coaching, 'cricket_coaching'),
+                cricket_matches: normalizeEntries(d.recent_activities.matches, 'cricket_match'),
+                rest_days: normalizeEntries(d.recent_activities.rest_days, 'rest_day'),
+            };
+        }
+
+        // 3. Provide an empty quick_insights placeholder to prevent undefined errors
+        if (!d.quick_insights) {
+            d.quick_insights = {};
+        }
+
+        return data;
     }
 
     renderActivityCards(data) {
@@ -273,6 +329,7 @@ class MobileDashboard {
         const activityIcons = {
             fitness: '🏃',
             cricket_coaching: '🏏',
+            cricket_match: '🏆',
             cricket_matches: '🏆',
             rest_days: '😴'
         };
@@ -331,20 +388,26 @@ class MobileDashboard {
                         item.focus_level ? `Focus: ${item.focus_level}/10` : null
                     ].filter(Boolean);
                 
-                case 'cricket_matches':
-                    return [
-                        item.runs_scored !== null ? `${item.runs_scored} runs` : null,
-                        item.balls_faced !== null ? `${item.balls_faced} balls` : null,
-                        (item.runs_scored && item.balls_faced) ? `SR: ${Math.round((item.runs_scored / item.balls_faced) * 100)}%` : null
-                    ].filter(Boolean);
-                
-                case 'rest_days':
-                    return [
-                        item.energy_level ? `Energy: ${item.energy_level}/10` : null,
-                        item.fatigue_level ? `Fatigue: ${item.fatigue_level}/10` : null,
-                        item.rest_type ? item.rest_type.replace(/_/g, ' ') : null
-                    ].filter(Boolean);
-                
+                case 'cricket_match':
+                case 'cricket_matches': {
+                    const m = [];
+                    if (item.runs_scored != null) m.push({ label: 'Runs', value: `${item.runs_scored}` });
+                    if (item.balls_faced != null) m.push({ label: 'Balls', value: `${item.balls_faced}` });
+                    if (item.runs_scored && item.balls_faced) {
+                        const sr = Math.round((item.runs_scored / item.balls_faced) * 100);
+                        m.push({ label: 'Strike Rate', value: `${sr}%` });
+                    }
+                    if (item.opposition_team) m.push({ label: 'Opposition', value: item.opposition_team });
+                    return m;
+                }
+                case 'rest_day':
+                case 'rest_days': {
+                    const m = [];
+                    if (item.energy_level) m.push({ label: 'Energy', value: `${item.energy_level}/10` });
+                    if (item.fatigue_level) m.push({ label: 'Fatigue', value: `${item.fatigue_level}/10` });
+                    if (item.motivation_level) m.push({ label: 'Motivation', value: `${item.motivation_level}/10` });
+                    return m;
+                }
                 default:
                     return [];
             }
@@ -400,89 +463,43 @@ class MobileDashboard {
         const icon = this.getActivityIcon(item.type);
         const title = this.formatActivityTitle(item);
         
-        // Format transcript to handle multiple turns
+        // Format transcript to handle multiple turns including AI questions
         const formatTranscript = (transcript) => {
             if (!transcript) return '<div class="no-transcript">No transcript available</div>';
-            
-            // Check if transcript contains multiple turns (has "Turn X (conf:" pattern)
-            if (transcript.includes('Turn ') && transcript.includes('(conf:')) {
-                // Split by double newline and format each turn
-                const turns = transcript.split('\n\n').filter(turn => turn.trim());
-                
-                if (turns.length > 1) {
-                    // Multiple turns - show conversation flow
-                    const conversationHeader = `
-                        <div class="conversation-summary">
-                            <div class="conversation-stats">
-                                <span class="turn-count">💬 ${turns.length} conversation turns</span>
-                                <span class="conversation-flow">🔄 Multi-turn interaction</span>
-                            </div>
-                        </div>
-                    `;
-                    
-                    const formattedTurns = turns.map((turn, index) => {
-                        const lines = turn.split('\n');
-                        const headerLine = lines[0];
-                        const contentLines = lines.slice(1);
-                        
-                        // Extract confidence from header like "Turn 1 (conf: 0.95):"
-                        const confMatch = headerLine.match(/conf:\s*([\d.]+)/);
-                        const confidence = confMatch ? (parseFloat(confMatch[1]) * 100).toFixed(0) : 'N/A';
-                        const turnNumber = index + 1;
-                        
-                        return `
-                            <div class="transcript-turn" data-turn="${turnNumber}">
-                                <div class="turn-header">
-                                    <div class="turn-info">
-                                        <span class="turn-number">Turn ${turnNumber}</span>
-                                        <span class="turn-confidence" title="Speech Recognition Confidence">
-                                            ${confidence}% confidence
-                                        </span>
-                                    </div>
-                                    ${index === 0 ? '<span class="turn-badge initial">Initial</span>' : 
-                                      index === turns.length - 1 ? '<span class="turn-badge final">Final</span>' : 
-                                      '<span class="turn-badge follow-up">Follow-up</span>'}
-                                </div>
-                                <div class="turn-content">
-                                    ${contentLines.length > 0 ? contentLines.join('<br>') : 'No additional content'}
-                                </div>
-                            </div>
-                        `;
-                    }).join('');
-                    
-                    return conversationHeader + '<div class="conversation-turns">' + formattedTurns + '</div>';
-                } else {
-                    // Single turn from multi-turn format
-                    const lines = turns[0].split('\n');
-                    const headerLine = lines[0];
-                    const contentLines = lines.slice(1);
-                    const confMatch = headerLine.match(/conf:\s*([\d.]+)/);
-                    const confidence = confMatch ? (parseFloat(confMatch[1]) * 100).toFixed(0) : 'N/A';
-                    
+
+            // If transcript is stored as JSON string with turns array, try parse
+            try {
+                const parsed = JSON.parse(transcript);
+                if (Array.isArray(parsed)) {
                     return `
-                        <div class="single-turn-conversation">
-                            <div class="turn-header single">
-                                <span class="turn-number">Single Turn</span>
-                                <span class="turn-confidence">${confidence}% confidence</span>
-                            </div>
-                            <div class="turn-content single">
-                                ${contentLines.length > 0 ? contentLines.join('<br>') : 'No additional content'}
-                            </div>
-                        </div>
-                    `;
+                        <div class="conversation-turns">
+                            ${parsed.map((turn, idx) => `
+                                <div class="conv-turn">
+                                    <div class="conv-q"><strong>🤖 Q${idx + 1}:</strong> ${turn.question || ''}</div>
+                                    <div class="conv-a"><strong>🗣️ A${idx + 1}:</strong> ${turn.answer || ''}</div>
+                                </div>
+                            `).join('')}
+                        </div>`;
                 }
-            } else {
-                // Legacy single transcript format
-                return `
-                    <div class="transcript-single legacy">
-                        <div class="single-transcript-header">
-                            <span class="transcript-type">📝 Direct Transcript</span>
-                            <span class="transcript-note">Single recording</span>
-                        </div>
-                        <div class="single-transcript-content">${transcript}</div>
-                    </div>
-                `;
+            } catch (e) { /* fallback */ }
+
+            // Fallback: legacy multi-turn format "Turn X (conf:):" blocks
+            if (transcript.includes('Turn ') && transcript.includes('(conf:')) {
+                const turns = transcript.split('\n\n').filter(t => t.trim());
+                const html = turns.map((block, idx) => {
+                    const lines = block.split('\n');
+                    const header = lines[0];
+                    const content = lines.slice(1).join(' ');
+                    return `
+                        <div class="conv-turn">
+                            <div class="conv-a"><strong>🗣️ A${idx + 1}:</strong> ${content}</div>
+                        </div>`;
+                }).join('');
+                return `<div class="conversation-turns">${html}</div>`;
             }
+
+            // Simple single transcript
+            return `<div class="transcript-single">${transcript}</div>`;
         };
         
         modalContent.innerHTML = `
@@ -569,6 +586,7 @@ class MobileDashboard {
         const icons = {
             fitness: '🏃',
             cricket_coaching: '🏏',
+            cricket_match: '🏆',
             cricket_matches: '🏆',
             rest_day: '😴'
         };
@@ -678,6 +696,7 @@ class MobileDashboard {
                 }
                 break;
 
+            case 'cricket_match':
             case 'cricket_matches':
                 if (item.match_type) {
                     detailsHtml += `<div class="detail-item">
@@ -706,6 +725,7 @@ class MobileDashboard {
                 }
                 break;
 
+            case 'rest_day':
             case 'rest_days':
                 if (item.rest_type) {
                     detailsHtml += `<div class="detail-item">
@@ -740,74 +760,42 @@ class MobileDashboard {
 
     getActivityMetrics(item) {
         switch (item.type) {
-            case 'fitness':
+            case 'fitness': {
                 const metrics = [];
-                if (item.duration_minutes) {
-                    metrics.push({ label: 'Duration', value: `${item.duration_minutes} min` });
-                }
-                if (item.intensity) {
-                    metrics.push({ label: 'Intensity', value: item.intensity.charAt(0).toUpperCase() + item.intensity.slice(1) });
-                }
-                if (item.energy_level) {
-                    metrics.push({ label: 'Energy Level', value: `${item.energy_level}/5` });
-                }
-                if (item.distance_km) {
-                    metrics.push({ label: 'Distance', value: `${item.distance_km} km` });
-                }
+                if (item.duration_minutes) metrics.push({ label: 'Duration', value: `${item.duration_minutes} min` });
+                if (item.intensity) metrics.push({ label: 'Intensity', value: item.intensity });
+                if (item.energy_level) metrics.push({ label: 'Energy', value: `${item.energy_level}/10` });
+                if (item.distance_km) metrics.push({ label: 'Distance', value: `${item.distance_km} km` });
                 return metrics;
-            
-            case 'cricket_coaching':
-                const coachingMetrics = [];
-                if (item.duration_minutes) {
-                    coachingMetrics.push({ label: 'Session Length', value: `${item.duration_minutes} min` });
-                }
-                if (item.focus_level) {
-                    coachingMetrics.push({ label: 'Focus Level', value: `${item.focus_level}/10` });
-                }
-                if (item.confidence_level) {
-                    coachingMetrics.push({ label: 'Confidence', value: `${item.confidence_level}/10` });
-                }
-                if (item.self_assessment_score) {
-                    coachingMetrics.push({ label: 'Self Rating', value: `${item.self_assessment_score}/10` });
-                }
-                return coachingMetrics;
-            
-            case 'cricket_matches':
-                const matchMetrics = [];
-                if (item.runs_scored !== null && item.runs_scored !== undefined) {
-                    matchMetrics.push({ label: 'Runs Scored', value: `${item.runs_scored}` });
-                }
-                if (item.balls_faced !== null && item.balls_faced !== undefined) {
-                    matchMetrics.push({ label: 'Balls Faced', value: `${item.balls_faced}` });
-                }
+            }
+            case 'cricket_coaching': {
+                const m = [];
+                if (item.duration_minutes) m.push({ label: 'Duration', value: `${item.duration_minutes} min` });
+                if (item.confidence_level) m.push({ label: 'Confidence', value: `${item.confidence_level}/10` });
+                if (item.focus_level) m.push({ label: 'Focus', value: `${item.focus_level}/10` });
+                if (item.self_assessment_score) m.push({ label: 'Self Rating', value: `${item.self_assessment_score}/10` });
+                return m;
+            }
+            case 'cricket_match':
+            case 'cricket_matches': {
+                const m = [];
+                if (item.runs_scored != null) m.push({ label: 'Runs', value: `${item.runs_scored}` });
+                if (item.balls_faced != null) m.push({ label: 'Balls', value: `${item.balls_faced}` });
                 if (item.runs_scored && item.balls_faced) {
-                    const strikeRate = Math.round((item.runs_scored / item.balls_faced) * 100);
-                    matchMetrics.push({ label: 'Strike Rate', value: `${strikeRate}%` });
+                    const sr = Math.round((item.runs_scored / item.balls_faced) * 100);
+                    m.push({ label: 'Strike Rate', value: `${sr}%` });
                 }
-                if (item.opposition_strength) {
-                    matchMetrics.push({ label: 'Opposition', value: `${item.opposition_strength}/10` });
-                }
-                return matchMetrics;
-            
-            case 'rest_days':
-                const restMetrics = [];
-                if (item.energy_level) {
-                    restMetrics.push({ label: 'Energy Level', value: `${item.energy_level}/10` });
-                }
-                if (item.fatigue_level) {
-                    restMetrics.push({ label: 'Fatigue Level', value: `${item.fatigue_level}/10` });
-                }
-                if (item.motivation_level) {
-                    restMetrics.push({ label: 'Motivation', value: `${item.motivation_level}/10` });
-                }
-                if (item.rest_type) {
-                    const restTypeFormatted = item.rest_type.replace(/_/g, ' ').split(' ').map(word => 
-                        word.charAt(0).toUpperCase() + word.slice(1)
-                    ).join(' ');
-                    restMetrics.push({ label: 'Rest Type', value: restTypeFormatted });
-                }
-                return restMetrics;
-            
+                if (item.opposition_team) m.push({ label: 'Opposition', value: item.opposition_team });
+                return m;
+            }
+            case 'rest_day':
+            case 'rest_days': {
+                const m = [];
+                if (item.energy_level) m.push({ label: 'Energy', value: `${item.energy_level}/10` });
+                if (item.fatigue_level) m.push({ label: 'Fatigue', value: `${item.fatigue_level}/10` });
+                if (item.motivation_level) m.push({ label: 'Motivation', value: `${item.motivation_level}/10` });
+                return m;
+            }
             default:
                 return [];
         }
@@ -827,6 +815,7 @@ class MobileDashboard {
                 if (item.self_assessment_score >= 8) return { icon: '⭐', text: 'Excellent session!' };
                 break;
             
+            case 'cricket_match':
             case 'cricket_matches':
                 const strikeRate = item.runs_scored && item.balls_faced ? 
                     (item.runs_scored / item.balls_faced) * 100 : 0;
@@ -835,6 +824,7 @@ class MobileDashboard {
                 if (item.post_match_satisfaction >= 8) return { icon: '😊', text: 'Great match!' };
                 break;
             
+            case 'rest_day':
             case 'rest_days':
                 if (item.energy_level >= 8) return { icon: '🔋', text: 'Well rested!' };
                 if (item.motivation_level >= 8) return { icon: '🎯', text: 'Motivated!' };
@@ -1094,6 +1084,7 @@ class MobileDashboard {
             'fitness': '🏃',
             'cricket_coaching': '🏏',
             'cricket_match': '🏆',
+            'cricket_matches': '🏆',
             'rest_day': '😴'
         };
 
@@ -1149,74 +1140,48 @@ class MobileDashboard {
     }
 
     formatFitnessTitle(entry) {
-        const type = (entry.fitness_type || 'fitness').replace(/_/g, ' ');
-        return `${type.charAt(0).toUpperCase() + type.slice(1)} Session`;
+        // Prefer specific exercise name, otherwise fall back to exercise_type or generic label
+        const name = entry.exercise_name || entry.exercise_type || entry.fitness_type || 'Fitness';
+        const formatted = name.toString().replace(/_/g, ' ');
+        return `${formatted.charAt(0).toUpperCase() + formatted.slice(1)} Session`;
     }
 
     formatCoachingTitle(entry) {
-        const type = (entry.session_type || 'cricket').replace(/_/g, ' ');
+        const type = (entry.session_type || 'Cricket').toString().replace(/_/g, ' ');
         return `${type.charAt(0).toUpperCase() + type.slice(1)} Practice`;
     }
 
     formatMatchTitle(entry) {
-        const type = (entry.match_type || 'match').charAt(0).toUpperCase() + (entry.match_type || 'match').slice(1);
-        return `${type} Performance`;
+        const fmt = (entry.match_format || entry.match_type || 'Match').toString().replace(/_/g, ' ');
+        return `${fmt.charAt(0).toUpperCase() + fmt.slice(1)} Performance`;
     }
 
     formatRestDayTitle(entry) {
-        const type = (entry.rest_type || 'rest').replace(/_/g, ' ');
+        const type = (entry.rest_type || 'Rest').toString().replace(/_/g, ' ');
         return `${type.charAt(0).toUpperCase() + type.slice(1)} Day`;
-    }
-
-    getMainInfo(entry) {
-        switch (entry.type) {
-            case 'fitness':
-                return [
-                    { label: 'Duration', value: `${entry.duration_minutes || 0}min` },
-                    { label: 'Intensity', value: entry.intensity || 'N/A' },
-                    { label: 'Energy', value: `${entry.energy_level || 0}/5` },
-                    { label: 'Distance', value: entry.distance_km ? `${entry.distance_km}km` : 'N/A' }
-                ];
-            
-            case 'cricket_coaching':
-                return [
-                    { label: 'Duration', value: `${entry.duration_minutes || 0}min` },
-                    { label: 'Confidence', value: `${entry.confidence_level || 0}/10` },
-                    { label: 'Focus', value: `${entry.focus_level || 0}/10` },
-                    { label: 'Self Rating', value: `${entry.self_assessment_score || 0}/10` }
-                ];
-            
-            case 'cricket_match':
-                return [
-                    { label: 'Runs', value: entry.runs_scored !== null ? entry.runs_scored : 'N/A' },
-                    { label: 'Balls', value: entry.balls_faced !== null ? entry.balls_faced : 'N/A' },
-                    { label: 'Opposition', value: `${entry.opposition_strength || 0}/10` },
-                    { label: 'Satisfaction', value: `${entry.post_match_satisfaction || 0}/10` }
-                ];
-            
-            case 'rest_day':
-                return [
-                    { label: 'Energy', value: `${entry.energy_level || 0}/10` },
-                    { label: 'Fatigue', value: `${entry.fatigue_level || 0}/10` },
-                    { label: 'Motivation', value: `${entry.motivation_level || 0}/10` },
-                    { label: 'Soreness', value: entry.soreness_level ? `${entry.soreness_level}/10` : 'N/A' }
-                ];
-            
-            default:
-                return [];
-        }
     }
 
     getEntryDescription(entry) {
         switch (entry.type) {
             case 'fitness':
-                return entry.details || entry.transcript?.substring(0, 100) || '';
+                return entry.details || entry.notes || entry.transcript?.substring(0, 100) || '';
             case 'cricket_coaching':
-                return entry.what_went_well || entry.transcript?.substring(0, 100) || '';
+                return entry.what_went_well || entry.notes || entry.transcript?.substring(0, 100) || '';
             case 'cricket_match':
-                return entry.key_shots_played || entry.transcript?.substring(0, 100) || '';
+            case 'cricket_matches':
+                return (
+                    entry.key_moments?.join(', ') ||
+                    entry.key_shots_played ||
+                    entry.notes ||
+                    entry.transcript?.substring(0, 100) || ''
+                );
             case 'rest_day':
-                return entry.mood_description || entry.physical_state || entry.transcript?.substring(0, 100) || '';
+                return (
+                    entry.mood_description ||
+                    entry.physical_state ||
+                    entry.notes ||
+                    entry.transcript?.substring(0, 100) || ''
+                );
             default:
                 return '';
         }
@@ -1224,42 +1189,43 @@ class MobileDashboard {
 
     getEntryTags(entry) {
         const tags = [];
-        
+
         // Mental state tag
         if (entry.mental_state) {
             tags.push({ text: entry.mental_state, class: 'mental-state' });
         }
-        
-        // Type-specific tags
+
         switch (entry.type) {
             case 'fitness':
-                if (entry.duration_minutes) {
-                    tags.push({ text: `${entry.duration_minutes}min`, class: 'duration' });
+                if (entry.exercise_type) {
+                    tags.push({ text: entry.exercise_type.replace(/_/g, ' '), class: 'exercise-type' });
                 }
                 if (entry.intensity) {
                     tags.push({ text: entry.intensity, class: 'intensity' });
                 }
                 break;
-                
+
             case 'cricket_coaching':
                 if (entry.session_type) {
                     tags.push({ text: entry.session_type.replace(/_/g, ' '), class: 'session-type' });
                 }
                 break;
-                
+
             case 'cricket_match':
-                if (entry.match_type) {
-                    tags.push({ text: entry.match_type, class: 'match-type' });
+            case 'cricket_matches':
+                if (entry.match_format || entry.match_type) {
+                    const label = (entry.match_format || entry.match_type).toString().replace(/_/g, ' ');
+                    tags.push({ text: label, class: 'match-format' });
                 }
                 break;
-                
+
             case 'rest_day':
                 if (entry.rest_type) {
                     tags.push({ text: entry.rest_type.replace(/_/g, ' '), class: 'rest-type' });
                 }
                 break;
         }
-        
+
         return tags;
     }
 
@@ -1535,6 +1501,46 @@ class MobileDashboard {
         if (modal) {
             modal.style.display = 'none';
             document.body.style.overflow = 'auto';
+        }
+    }
+
+    getMainInfo(entry) {
+        switch (entry.type) {
+            case 'fitness':
+                return [
+                    { label: 'Duration', value: `${entry.duration_minutes || 0}min` },
+                    { label: 'Intensity', value: entry.intensity || 'N/A' },
+                    { label: 'Energy', value: entry.energy_level != null ? `${entry.energy_level}/10` : 'N/A' },
+                    { label: 'Distance', value: entry.distance_km != null ? `${entry.distance_km}km` : 'N/A' }
+                ];
+
+            case 'cricket_coaching':
+                return [
+                    { label: 'Duration', value: `${entry.duration_minutes || 0}min` },
+                    { label: 'Confidence', value: entry.confidence_level != null ? `${entry.confidence_level}/10` : 'N/A' },
+                    { label: 'Focus', value: entry.focus_level != null ? `${entry.focus_level}/10` : 'N/A' },
+                    { label: 'Self Rating', value: entry.self_assessment_score != null ? `${entry.self_assessment_score}/10` : 'N/A' }
+                ];
+
+            case 'cricket_match':
+            case 'cricket_matches':
+                return [
+                    { label: 'Runs', value: entry.runs_scored != null ? entry.runs_scored : 'N/A' },
+                    { label: 'Balls', value: entry.balls_faced != null ? entry.balls_faced : 'N/A' },
+                    { label: 'Strike Rate', value: (entry.runs_scored && entry.balls_faced) ? `${Math.round((entry.runs_scored/entry.balls_faced)*100)}%` : 'N/A' },
+                    { label: 'Opposition', value: entry.opposition_team || 'N/A' }
+                ];
+
+            case 'rest_day':
+                return [
+                    { label: 'Energy', value: entry.energy_level != null ? `${entry.energy_level}/10` : 'N/A' },
+                    { label: 'Fatigue', value: entry.fatigue_level != null ? `${entry.fatigue_level}/10` : 'N/A' },
+                    { label: 'Motivation', value: entry.motivation_level != null ? `${entry.motivation_level}/10` : 'N/A' },
+                    { label: 'Rest Type', value: entry.rest_type ? entry.rest_type.replace(/_/g, ' ') : 'N/A' }
+                ];
+
+            default:
+                return [];
         }
     }
 }

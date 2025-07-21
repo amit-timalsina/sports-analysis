@@ -8,6 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from auth.repositories.user_repository import UserRepository
 from auth.services.supabase import AuthSupabaseService
 from database.session import get_session
+from fitness_tracking.repositories.cricket_coaching_repository import CricketCoachingEntryRepository
+from fitness_tracking.repositories.fitness_repository import FitnessEntryRepository
 from voice_processing.repositories.conversation_repository import (
     ConversationAnalyticsRepository,
     ConversationMessageRepository,
@@ -53,6 +55,14 @@ async def lifespan(_: FastAPI, registry: svcs.Registry) -> AsyncGenerator[None, 
     registry.register_factory(
         QuestionContextRepository,
         QuestionContextRepository.get_as_dependency,
+    )
+    registry.register_factory(
+        CricketCoachingEntryRepository,
+        CricketCoachingEntryRepository.get_as_dependency,
+    )
+    registry.register_factory(
+        FitnessEntryRepository,
+        FitnessEntryRepository.get_as_dependency,
     )
     yield
     # Teardown Resources

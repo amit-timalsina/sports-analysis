@@ -6,13 +6,14 @@ from typing import Any
 from uuid import UUID
 
 from common.schemas.entry_type import EntryType
-from fitness_tracking.models.cricket import CricketCoachingEntry, CricketMatchEntry
-from fitness_tracking.repositories import (
-    CricketCoachingEntryRepository,
+from fitness_tracking.models.cricket_coaching import CricketCoachingEntry
+from fitness_tracking.models.cricket_match import CricketMatchEntry
+from fitness_tracking.repositories.cricket_coaching_repository import CricketCoachingEntryRepository
+from fitness_tracking.repositories.cricket_match_repository import (
     CricketMatchEntryRepository,
-    FitnessEntryRepository,
-    RestDayEntryRepository,
 )
+from fitness_tracking.repositories.fitness_repository import FitnessEntryRepository
+from fitness_tracking.repositories.rest_day_repository import RestDayEntryRepository
 from fitness_tracking.schemas.exercise_type import ExerciseType
 from fitness_tracking.schemas.fitness import FitnessEntryCreate, FitnessEntryRead
 from fitness_tracking.schemas.intensity_level import IntensityLevel

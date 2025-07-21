@@ -10,12 +10,12 @@ from auth.dependencies.security import get_current_user
 from auth.schemas.user import User as UserGet
 from common.schemas import SuccessResponse
 from database.session import get_session
-from fitness_tracking.repositories import (
-    CricketCoachingEntryRepository,
+from fitness_tracking.repositories.cricket_coaching_repository import CricketCoachingEntryRepository
+from fitness_tracking.repositories.cricket_match_repository import (
     CricketMatchEntryRepository,
-    FitnessEntryRepository,
-    RestDayEntryRepository,
 )
+from fitness_tracking.repositories.fitness_repository import FitnessEntryRepository
+from fitness_tracking.repositories.rest_day_repository import RestDayEntryRepository
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/entries", tags=["entries"])

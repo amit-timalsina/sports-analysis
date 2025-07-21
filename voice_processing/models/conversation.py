@@ -8,7 +8,6 @@ from sqlalchemy import JSON, DateTime, ForeignKey, String, func
 from sqlalchemy import UUID as SA_UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from auth.models.user import User
 from database.base import ProductionBase
 from voice_processing.schemas.conversation_detail_enums import (
     ActivityType,

@@ -10,10 +10,10 @@ from auth.dependencies.security import get_current_user
 from auth.schemas.user import User as UserGet
 from common.schemas import SuccessResponse
 from database.session import get_session
-from fitness_tracking.repositories import (
+from fitness_tracking.repositories.cricket_coaching_repository import (
     CricketCoachingEntryRepository,
-    FitnessEntryRepository,
 )
+from fitness_tracking.repositories.fitness_repository import FitnessEntryRepository
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["dashboard"])

@@ -114,7 +114,6 @@ class ConversationBase(AppBaseModel):
     """Base schema for conversation data."""
 
     session_id: str = Field(..., description="Unique session identifier")
-    user_id: str = Field(..., description="User identifier")
     activity_type: ActivityType = Field(..., description="Type of activity being logged")
     state: ConversationState = Field(
         default=ConversationState.STARTED,

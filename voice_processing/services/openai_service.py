@@ -14,12 +14,12 @@ from langfuse.openai import AsyncOpenAI
 
 from common.config.settings import settings
 from common.exceptions import AppError
-from fitness_tracking.schemas.cricket import (
+from fitness_tracking.schemas.cricket_coaching import (
     CricketCoachingDataExtraction,
-    CricketMatchDataExtraction,
-    RestDayDataExtraction,
 )
-from fitness_tracking.schemas.fitness import FitnessDataExtraction
+from fitness_tracking.schemas.cricket_match_data_extraction import CricketMatchDataExtraction
+from fitness_tracking.schemas.fitness_data_extraction import FitnessDataExtraction
+from fitness_tracking.schemas.rest_day_data_extraction import RestDayDataExtraction
 from voice_processing.schemas.processing import TranscriptionResponse
 
 logger = logging.getLogger(__name__)

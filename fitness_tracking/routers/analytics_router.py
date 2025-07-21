@@ -10,10 +10,10 @@ from auth.dependencies.security import get_current_user
 from auth.schemas.user import User as UserGet
 from common.schemas import SuccessResponse
 from database.session import get_session
-from fitness_tracking.repositories import (
+from fitness_tracking.repositories.cricket_match_repository import (
     CricketMatchEntryRepository,
-    FitnessEntryRepository,
 )
+from fitness_tracking.repositories.fitness_repository import FitnessEntryRepository
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/analytics", tags=["analytics"])
@@ -124,7 +124,8 @@ async def get_combined_analytics(
                 "cricket": cricket_stats,
                 "activity_breakdown": {
                     "fitness_percentage": round(
-                        (total_fitness_sessions / total_activities * 100), 1
+                        (total_fitness_sessions / total_activities * 100),
+                        1,
                     )
                     if total_activities > 0
                     else 0,

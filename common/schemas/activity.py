@@ -10,7 +10,6 @@ from common.schemas.entry_type import EntryType
 class ActivityEntryBase(AppBaseModel):
     """Base schema for all activity entries."""
 
-    user_id: str = Field(..., description="User identifier")
     session_id: str = Field(..., description="Session identifier")
     conversation_id: UUID = Field(..., description="ID of the related conversation")
     entry_type: EntryType = Field(..., description="Type of entry")
