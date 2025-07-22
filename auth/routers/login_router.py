@@ -36,7 +36,7 @@ class LoginRequest(BaseModel):
 
 
 @router.post("/api/login")
-async def login(request: LoginRequest) -> dict:
+async def login(request: LoginRequest) -> dict[str, str]:
     """
     Authenticate user with email and password.
 
@@ -54,28 +54,29 @@ async def login(request: LoginRequest) -> dict:
     ------
     HTTPException
         If authentication fails or an error occurs during the process.
+
     """
     logger.info("Received login request")
     try:
         response = supabase.auth.sign_in_with_password(
             {"email": request.email, "password": request.password},
         )
-        if response.user:
+        if response.user and response.session and response.session.access_token:
             logger.info("User authenticated")
             return {
                 "message": "Success: User authenticated!",
                 "access_token": response.session.access_token,
-                "user_id": response.user.id,
-                "email": response.user.email,
-                "redirect": "/email",
+                "user_id": str(response.user.id),
+                "email": str(response.user.email),
+                "redirect": "/home",
             }
-        else:
-            raise HTTPException(
-                status_code=401, detail="Authentication failed: Invalid email or password."
-            )
+        raise HTTPException(
+            status_code=401,
+            detail="Authentication failed: Invalid email or password.",
+        )
     except Exception as e:
-        logger.error(f"Authentication error: {str(e)}")
-        raise HTTPException(status_code=400, detail=f"Error: {str(e)}")
+        logger.error(f"Authentication error: {e!s}")
+        raise HTTPException(status_code=400, detail=f"Error: {e!s}")
 
 
 @router.get("/email/{token}", response_class=HTMLResponse)

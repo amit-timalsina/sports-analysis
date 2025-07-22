@@ -14,18 +14,20 @@ from fitness_tracking.repositories.cricket_match_repository import (
 )
 from fitness_tracking.repositories.fitness_repository import FitnessEntryRepository
 from fitness_tracking.repositories.rest_day_repository import RestDayEntryRepository
-from fitness_tracking.schemas.exercise_type import ExerciseType
+from fitness_tracking.schemas.enums.exercise_type import ExerciseType
+from fitness_tracking.schemas.enums.intensity_level import IntensityLevel
 from fitness_tracking.schemas.fitness import FitnessEntryCreate, FitnessEntryRead
-from fitness_tracking.schemas.intensity_level import IntensityLevel
 from voice_processing.models.conversation import (
     ConversationState,
 )
 from voice_processing.repositories import (
-    ConversationMessageRepository,
     ConversationRepository,
     ConversationTurnRepository,
 )
-from voice_processing.schemas.conversation import (
+from voice_processing.repositories.chat_message_repository import (
+    ConversationMessageRepository,
+)
+from voice_processing.schemas.conversation_old import (
     ConversationCreate,
     ConversationMessageCreate,
     ConversationRead,

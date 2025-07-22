@@ -7,7 +7,7 @@ from pydantic import Field
 
 from common.schemas import AppBaseModel, PrimaryKeyBase, TimestampBase
 from common.schemas.activity import ActivityEntryBase
-from common.schemas.entry_type import EntryType
+from fitness_tracking.schemas.enums.activity_type import ActivityType
 from fitness_tracking.schemas.enums.coaching_focus_type import CoachingFocus
 from fitness_tracking.schemas.enums.cricket_discipline_type import CricketDiscipline
 
@@ -16,7 +16,10 @@ from fitness_tracking.schemas.enums.cricket_discipline_type import CricketDiscip
 class CricketCoachingEntryBase(ActivityEntryBase):
     """Base schema for cricket coaching entries."""
 
-    entry_type: EntryType = Field(default=EntryType.CRICKET_COACHING, description="Entry type")
+    activity_type: ActivityType = Field(
+        default=ActivityType.CRICKET_COACHING,
+        description="Activity type",
+    )
     coach_name: str = Field(..., description="Name of the coach")
     session_type: str = Field(..., description="Type of session (individual, group, masterclass)")
     duration_minutes: int = Field(..., gt=0, description="Duration in minutes")

@@ -1,17 +1,11 @@
 """Voice processing SQLAlchemy 2.0 models."""
 
+from .chat_message import ChatMessage
 from .conversation import (
     Conversation,
-    ConversationAnalytics,
-    ConversationMessage,
-    ConversationTurn,
-    QuestionContext,
 )
 
 __all__ = (
+    "ChatMessage",
     "Conversation",
-    "ConversationAnalytics",
-    "ConversationMessage",
-    "ConversationTurn",
-    "QuestionContext",
 )

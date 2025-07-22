@@ -22,7 +22,7 @@ if config.config_file_name is not None:
 # for 'autogenerate' support
 from auth.models import *
 from fitness_tracking.models import *
-from voice_processing.models.conversation import *
+from voice_processing.models import *
 
 target_metadata = ProductionBase.metadata
 

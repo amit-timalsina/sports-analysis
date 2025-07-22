@@ -5,6 +5,7 @@ import os
 import re
 import subprocess
 import tempfile
+from collections.abc import AsyncGenerator
 from datetime import UTC, datetime
 from io import BytesIO
 from typing import Any
@@ -39,7 +40,7 @@ class OpenAIService:
         """Initialize OpenAI service."""
         self._client: AsyncOpenAI | None = None
 
-    def _get_client(self) -> AsyncOpenAI | None:
+    def get_client(self) -> AsyncOpenAI | None:
         """Get OpenAI client, initializing it if needed."""
         if self._client is None:
             # Check if we're in testing mode
@@ -57,7 +58,7 @@ class OpenAIService:
                     timeout=settings.openai.timeout,
                 )
             except Exception as e:
-                logger.warning("Failed to initialize OpenAI client: %s", e)
+                logger.exception("Failed to initialize OpenAI client: %s", e)
                 return None
 
         return self._client
@@ -231,7 +232,7 @@ class OpenAIService:
             OpenAIServiceError: If transcription fails
 
         """
-        client = self._get_client()
+        client = self.get_client()
 
         # Handle testing or when client is not available
         if client is None:
@@ -431,7 +432,7 @@ class OpenAIService:
             Dictionary containing structured fitness data
 
         """
-        client = self._get_client()
+        client = self.get_client()
 
         # Handle testing or when client is not available
         if client is None:
@@ -598,7 +599,7 @@ Map similar terms to the allowed values. DO NOT use any other values."""
     @observe(capture_input=True, capture_output=True)
     async def extract_cricket_coaching_data(self, transcript: str) -> dict[str, Any]:
         """Extract structured cricket coaching data from transcript."""
-        client = self._get_client()
+        client = self.get_client()
 
         if client is None:
             logger.info("Mock cricket coaching data extraction for testing")
@@ -687,7 +688,7 @@ Map similar terms to the allowed values. DO NOT use any other values."""
 
     async def extract_cricket_match_data(self, transcript: str) -> dict[str, Any]:
         """Extract structured cricket match data from transcript."""
-        client = self._get_client()
+        client = self.get_client()
 
         if client is None:
             return {
@@ -776,7 +777,7 @@ Map similar terms to the allowed values. DO NOT use any other values."""
 
     async def extract_rest_day_data(self, transcript: str) -> dict[str, Any]:
         """Extract structured rest day data from transcript."""
-        client = self._get_client()
+        client = self.get_client()
 
         if client is None:
             return {
@@ -852,6 +853,11 @@ Map similar terms to the allowed values. DO NOT use any other values."""
             "mood_description": "relaxed",
             "mental_state": "good",
         }
+
+    @classmethod
+    async def get_as_dependency(cls) -> AsyncGenerator["OpenAIService", None]:
+        """Get the OpenAI service as a dependency."""
+        yield cls()
 
 
 # Global OpenAI service instance

@@ -4,14 +4,14 @@ from pydantic import Field
 
 from common.schemas import AppBaseModel, TimestampBase
 from common.schemas.activity import ActivityEntryBase
-from common.schemas.entry_type import EntryType
 from common.schemas.primary_key_base import PrimaryKeyBase
+from fitness_tracking.schemas.enums.activity_type import ActivityType
 
 
 class RestDayEntryBase(ActivityEntryBase):
     """Base schema for rest day entries."""
 
-    entry_type: EntryType = Field(default=EntryType.REST_DAY, description="Entry type")
+    activity_type: ActivityType = Field(default=ActivityType.REST_DAY, description="Activity type")
     rest_type: str = Field(..., description="Type of rest (active, complete, partial)")
     planned: bool = Field(default=False, description="Whether this was a planned rest day")
 

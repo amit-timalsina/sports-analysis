@@ -13,8 +13,11 @@ from fitness_tracking.routers.analytics_router import router as fitness_analytic
 from fitness_tracking.routers.entries_router import router as fitness_entries_router
 from logger import get_logger
 from voice_processing.routers.audio_router import router as voice_audio_router
+from voice_processing.routers.chat_message_router import router as message_router
+from voice_processing.routers.conversation_router import router as conversation_router
 from voice_processing.routers.session_router import router as voice_session_router
-from voice_processing.routers.websocket_router import router as voice_websocket_router
+
+# from voice_processing.routers.websocket_router import router as voice_websocket_router
 
 logger = get_logger(__name__)
 
@@ -59,9 +62,11 @@ def setup_routes(app: FastAPI) -> None:
     # include core router
     app.include_router(core_router)
     # include voice processing routers
+    app.include_router(conversation_router)
+    app.include_router(message_router)
     app.include_router(voice_audio_router)
     app.include_router(voice_session_router)
-    app.include_router(voice_websocket_router)
+    # app.include_router(voice_websocket_router)
     # include dashboard router
     app.include_router(dashboard_router)
     # include fitness tracking routers

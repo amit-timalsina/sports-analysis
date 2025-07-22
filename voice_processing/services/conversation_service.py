@@ -16,7 +16,7 @@ from fitness_tracking.schemas.cricket_coaching import (
 from fitness_tracking.schemas.cricket_match_data_extraction import CricketMatchDataExtraction
 from fitness_tracking.schemas.fitness_data_extraction import FitnessDataExtraction
 from fitness_tracking.schemas.rest_day_data_extraction import RestDayDataExtraction
-from voice_processing.schemas.conversation import (
+from voice_processing.schemas.conversation_old import (
     ActivityType,
     ConversationAnalysis,
     ConversationContext,

@@ -3,6 +3,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from auth.models.user_identity import UserIdentity
 from database.base import ProductionBase
+from voice_processing.models.conversation import Conversation
 
 
 class User(ProductionBase):
@@ -53,4 +54,9 @@ class User(ProductionBase):
         back_populates="user",
         uselist=True,
         lazy="selectin",
+    )
+    conversations: Mapped[list[Conversation]] = relationship(
+        cascade="all, delete-orphan",
+        back_populates="user",
+        order_by="Conversation.created_at",
     )

@@ -1,3 +1,5 @@
+// The dashboard expects the authentication token to be present in localStorage['token'].
+// The login form (authentication.html) stores the token there after successful login.
 /**
  * Cricket Fitness Tracker - Mobile-First Dashboard
  * Provides modern, touch-friendly interface for activity logging and progress tracking
@@ -85,7 +87,12 @@ class MobileDashboard {
     }
 
     async fetchDashboardData() {
-        const response = await fetch('/api/dashboard');
+        const response = await fetch('/api/dashboard', {
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${localStorage.getItem('token')}`
+            },
+        });
         if (!response.ok) {
             throw new Error(`Failed to load dashboard: ${response.statusText}`);
         }

@@ -7,14 +7,14 @@ from pydantic import Field, model_validator
 
 from common.schemas import AppBaseModel, PrimaryKeyBase, TimestampBase
 from common.schemas.activity import ActivityEntryBase
-from common.schemas.entry_type import EntryType
 from fitness_tracking.schemas.enums import ExerciseType, IntensityLevel
+from fitness_tracking.schemas.enums.activity_type import ActivityType
 
 
 class FitnessEntryBase(ActivityEntryBase):
     """Base schema for fitness entries."""
 
-    entry_type: EntryType = Field(default=EntryType.FITNESS, description="Entry type")
+    activity_type: ActivityType = Field(default=ActivityType.FITNESS, description="Activity type")
     exercise_type: ExerciseType = Field(..., description="Type of exercise")
     exercise_name: str = Field(..., description="Name of the exercise")
     duration_minutes: int = Field(..., gt=0, description="Duration in minutes")

@@ -1,26 +1,30 @@
 """Fitness tracking SQLAlchemy 2.0 models."""
 
 from datetime import time
+from typing import TYPE_CHECKING
 
 from sqlalchemy import JSON, String
 from sqlalchemy import Enum as SA_Enum
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from common.models.activity import ActivityEntryBase
-from common.schemas.entry_type import EntryType
+from common.models.activity import ActivityEntry
+from fitness_tracking.schemas.enums.activity_type import ActivityType
 from fitness_tracking.schemas.enums.exercise_type import ExerciseType
 from fitness_tracking.schemas.enums.intensity_level import IntensityLevel
 
+if TYPE_CHECKING:
+    from voice_processing.models.conversation import Conversation
 
-class FitnessEntry(ActivityEntryBase):
-    """SQLAlchemy 2.0 model for fitness activity entries."""
+
+class FitnessEntry(ActivityEntry):
+    """Model for fitness activity entries."""
 
     __tablename__ = "fitness_entries"
 
     # Set the entry type
-    entry_type: Mapped[EntryType] = mapped_column(
-        SA_Enum(EntryType),
-        default=EntryType.FITNESS,
+    activity_type: Mapped[ActivityType] = mapped_column(
+        SA_Enum(ActivityType),
+        default=ActivityType.FITNESS,
         index=True,
     )
 
@@ -58,3 +62,7 @@ class FitnessEntry(ActivityEntryBase):
     # Timing specifics
     start_time: Mapped[time | None] = mapped_column()
     end_time: Mapped[time | None] = mapped_column()
+    # relationship to conversation
+    conversation: Mapped["Conversation"] = relationship(
+        back_populates="activity_entries",
+    )

@@ -8,8 +8,6 @@ from fastapi.responses import HTMLResponse
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from auth.dependencies.security import get_current_user
-from auth.schemas.user import User as UserGet
 from common.config.settings import settings
 from common.schemas import SuccessResponse
 from database.session import get_session
@@ -20,7 +18,6 @@ router = APIRouter(tags=["core"])
 @router.get("/", response_class=HTMLResponse)
 async def serve_index() -> HTMLResponse:
     """Serve the authentication page as the main entry point."""
-
     static_path = Path("static")
     html_file = static_path / "authentication.html"
     if html_file.exists():
@@ -29,11 +26,8 @@ async def serve_index() -> HTMLResponse:
 
 
 @router.get("/home", response_class=HTMLResponse)
-async def root(
-    current_user: Annotated[UserGet, Depends(get_current_user)],
-) -> HTMLResponse:
+async def root() -> HTMLResponse:
     """Serve the main web interface."""
-
     static_path = Path("static")
     html_file = static_path / "index.html"
     if html_file.exists():
@@ -46,7 +40,6 @@ async def root(
     <head><title>{settings.app.title}</title></head>
     <body>
         <h1>🏏 {settings.app.title}</h1>
-        <p> current_user: {current_user.id}</p>
         <p>Environment: {settings.app.environment}</p>
         <p>Version: {settings.app.version}</p>
         <p>Setting up the interface...</p>

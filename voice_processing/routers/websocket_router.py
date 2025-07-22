@@ -23,19 +23,8 @@ from fitness_tracking.repositories.cricket_match_repository import (
 )
 from fitness_tracking.repositories.fitness_repository import FitnessEntryRepository
 from fitness_tracking.repositories.rest_day_repository import RestDayEntryRepository
-from voice_processing.repositories.conversation_repository import (
-    ConversationMessageRepository,
-    ConversationRepository,
-    ConversationTurnRepository,
-)
-from voice_processing.schemas.conversation import (
-    ActivityType,
-    ConversationCreate,
-    ConversationRead,
-    ConversationResult,
-    ConversationTurnCreate,
-    ConversationTurnRead,
-)
+from voice_processing.repositories.conversation_repository import ConversationRepository
+from voice_processing.repositories.conversation_turn_repository import ConversationTurnRepository
 from voice_processing.schemas.processing import WebSocketMessage
 from voice_processing.services.completion_service import ConversationCompletionService
 from voice_processing.services.conversation_service import conversation_service

@@ -5,14 +5,17 @@ from pydantic import Field
 
 from common.schemas import AppBaseModel, PrimaryKeyBase, TimestampBase
 from common.schemas.activity import ActivityEntryBase
-from common.schemas.entry_type import EntryType
 from fitness_tracking.schemas.enums import MatchFormat
+from fitness_tracking.schemas.enums.activity_type import ActivityType
 
 
 class CricketMatchEntryBase(ActivityEntryBase):
     """Base schema for cricket match entries."""
 
-    entry_type: EntryType = Field(default=EntryType.CRICKET_MATCH, description="Entry type")
+    activity_type: ActivityType = Field(
+        default=ActivityType.CRICKET_MATCH,
+        description="Activity type",
+    )
     match_format: MatchFormat = Field(..., description="Format of the match")
     opposition_team: str = Field(..., description="Name of the opposition team")
     venue: str = Field(..., description="Match venue")
