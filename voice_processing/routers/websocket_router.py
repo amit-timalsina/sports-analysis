@@ -17,6 +17,7 @@ from fitness_tracking.repositories.rest_day_repository import RestDayEntryReposi
 from fitness_tracking.schemas.cricket_coaching import CricketCoachingEntryCreate
 from fitness_tracking.schemas.cricket_match import CricketMatchEntryCreate
 from fitness_tracking.schemas.enums.activity_type import ActivityType
+from fitness_tracking.schemas.enums.intensity_level import IntensityLevel
 from fitness_tracking.schemas.fitness import FitnessEntryCreate
 from fitness_tracking.schemas.rest_day import RestDayEntryCreate
 from logger import get_logger
@@ -85,6 +86,9 @@ async def voice_websocket_endpoint(
         if "text" in data:
             await handle_text_message(session_id, data["text"], db)
 
+        elif "bytes" in data:
+            await handle_audio_chunk(session_id, data["bytes"])
+
     connection_manager.disconnect(session_id)
 
 
@@ -101,7 +105,7 @@ async def handle_text_message(session_id: UUID, message: str, db: AsyncSession) 
 
     if message_type == "voice_data_meta":
         entry_type = message_data.get("entry_type")
-        user_id = message_data.get("user_id", "demo_user")
+        user_id = message_data.get("user_id")
 
         # Validate entry type
         valid_entry_types = ["fitness", "cricket_coaching", "cricket_match", "rest_day"]
@@ -115,12 +119,36 @@ async def handle_text_message(session_id: UUID, message: str, db: AsyncSession) 
             await connection_manager.send_message(error_message, session_id)
             return
 
+        # Validate user_id is provided and is a valid UUID
+        if not user_id:
+            error_message = WebSocketMessage(
+                type="error",
+                session_id=session_id,
+                error="missing_user_id",
+                message="user_id is required in voice_data_meta message",
+            )
+            await connection_manager.send_message(error_message, session_id)
+            return
+
+        try:
+            # Validate that user_id is a valid UUID
+            UUID(str(user_id))
+        except ValueError:
+            error_message = WebSocketMessage(
+                type="error",
+                session_id=session_id,
+                error="invalid_user_id",
+                message="user_id must be a valid UUID format",
+            )
+            await connection_manager.send_message(error_message, session_id)
+            return
+
         # Store session metadata
         connection_manager.set_session_metadata(
             session_id,
             {
                 "entry_type": entry_type,
-                "user_id": user_id,
+                "user_id": UUID(str(user_id)),
             },
         )
 
@@ -145,12 +173,81 @@ async def handle_text_message(session_id: UUID, message: str, db: AsyncSession) 
         logger.warning("Unknown text message type: %s", message_type)
 
 
+async def handle_audio_chunk(session_id: str, audio_chunk: bytes) -> None:
+    """Accumulate audio chunks for later processing when recording is complete."""
+    try:
+        # Validate audio chunk
+        if len(audio_chunk) == 0:
+            logger.debug("Received empty audio chunk for session %s", session_id)
+            return
+
+        # Check maximum individual chunk size to prevent abuse
+        max_chunk_size = 2 * 1024 * 1024  # 2MB per chunk
+        if len(audio_chunk) > max_chunk_size:
+            error_message = WebSocketMessage(
+                type="error",
+                session_id=session_id,
+                error="audio_chunk_too_large",
+                message=f"Audio chunk exceeds maximum size: {len(audio_chunk)} bytes",
+            )
+            await connection_manager.send_message(error_message, session_id)
+            return
+
+        # Accumulate the audio chunk
+        connection_manager.accumulate_audio_chunk(session_id, audio_chunk)
+        total_size = len(connection_manager.get_accumulated_audio(session_id))
+
+        # Check total accumulated size
+        max_total_size = settings.audio.max_file_size_mb * 1024 * 1024
+        if total_size > max_total_size:
+            error_message = WebSocketMessage(
+                type="error",
+                session_id=session_id,
+                error="total_audio_too_large",
+                message=f"Total accumulated audio exceeds maximum size: {total_size} bytes",
+            )
+            await connection_manager.send_message(error_message, session_id)
+            # Clear the buffer to prevent further accumulation
+            connection_manager.clear_audio_buffer(session_id)
+            return
+
+        # Send acknowledgment for chunk received
+        chunk_ack = WebSocketMessage(
+            type="audio_chunk_received",
+            session_id=session_id,
+            data={
+                "chunk_size": len(audio_chunk),
+                "total_accumulated": total_size,
+                "status": "accumulated",
+            },
+        )
+        await connection_manager.send_message(chunk_ack, session_id)
+
+        logger.debug(
+            "Accumulated audio chunk for session %s: +%d bytes (total: %d bytes)",
+            session_id,
+            len(audio_chunk),
+            total_size,
+        )
+
+    except Exception as e:
+        logger.exception("Audio chunk processing failed for session %s", session_id)
+        error_message = WebSocketMessage(
+            type="error",
+            session_id=session_id,
+            error="audio_chunk_processing_failed",
+            message=str(e),
+        )
+        await connection_manager.send_message(error_message, session_id)
+
+
 async def handle_complete_audio_processing(session_id: UUID, db: AsyncSession) -> None:
     """Handle complete audio processing."""
-    start_time = datetime.now(UTC)
 
     # Get accumulated audio and metadata
     audio_data = connection_manager.get_accumulated_audio(session_id)
+    # save audio data to the file
+
     session_metadata = connection_manager.get_session_metadata(session_id)
 
     if not audio_data:
@@ -228,9 +325,29 @@ async def handle_complete_audio_processing(session_id: UUID, db: AsyncSession) -
         return
 
     conversation_respository = ConversationRepository(db)
+
+    # Map entry_type string to ActivityType enum
+    entry_type_mapping = {
+        "fitness": ActivityType.FITNESS,
+        "cricket_coaching": ActivityType.CRICKET_COACHING,
+        "cricket_match": ActivityType.CRICKET_MATCH,
+        "rest_day": ActivityType.REST_DAY,
+    }
+
+    activity_type = entry_type_mapping.get(entry_type)
+    if not activity_type:
+        error_message = WebSocketMessage(
+            type="error",
+            session_id=session_id,
+            error="invalid_activity_type",
+            message=f"Invalid activity type mapping for entry_type: {entry_type}",
+        )
+        await connection_manager.send_message(error_message, session_id)
+        return
+
     conversation = await conversation_respository.create(
         ConversationCreate(
-            activity_type=ActivityType(entry_type),
+            activity_type=activity_type,
         ),
         current_user=user,
     )
@@ -254,7 +371,7 @@ async def handle_complete_audio_processing(session_id: UUID, db: AsyncSession) -
         data={
             "transcription": transcription_result.text,
             "confidence": transcription_result.confidence,
-            "duration": transcription_result.duration,
+            # "duration": transcription_result.
             "audio_size": len(audio_data),
             "entry_type": entry_type,
             "user_id": user_id,
@@ -324,8 +441,12 @@ async def handle_complete_audio_processing(session_id: UUID, db: AsyncSession) -
         entry_type_repository_instance = entry_type_repository(db)
         entry_type_create = entry_type_model(
             user_id=user.id,
+            conversation_id=conversation.id,
             activity_type=conversation.activity_type,
-            **extracted_data,
+            exercise_type=extracted_data.get("fitness_type"),
+            intensity=IntensityLevel(extracted_data.get("intensity")),
+            duration_minutes=extracted_data.get("duration_minutes"),
+            # **extracted_data,
         )
         await entry_type_repository_instance.create(entry_type_create, current_user=user)
 

@@ -8,7 +8,7 @@ from fitness_tracking.schemas.cricket_match import CricketMatchEntryCreate
 from fitness_tracking.schemas.enums import MatchFormat
 
 # Configuration
-token = "eyJhbGciOiJIUzI1NiIsImtpZCI6IlR6cDluOVBhNGNIVDFyZW8iLCJ0eXAiOiJKV1QifQ.eyJpc3MiOiJodHRwczovL21saW5hZGdldnBhYWJxcnFnb2diLnN1cGFiYXNlLmNvL2F1dGgvdjEiLCJzdWIiOiI2YzI0YTVjZC0yYmIwLTQ0NjUtOGIxZS1jYWNmY2ZlN2Q1MDkiLCJhdWQiOiJhdXRoZW50aWNhdGVkIiwiZXhwIjoxNzUzMjk3MjI5LCJpYXQiOjE3NTMyOTM2MjksImVtYWlsIjoidGVzdDExMUBnbWFpbC5jb20iLCJwaG9uZSI6IiIsImFwcF9tZXRhZGF0YSI6eyJwcm92aWRlciI6ImVtYWlsIiwicHJvdmlkZXJzIjpbImVtYWlsIl19LCJ1c2VyX21ldGFkYXRhIjp7ImVtYWlsX3ZlcmlmaWVkIjp0cnVlfSwicm9sZSI6ImF1dGhlbnRpY2F0ZWQiLCJhYWwiOiJhYWwxIiwiYW1yIjpbeyJtZXRob2QiOiJwYXNzd29yZCIsInRpbWVzdGFtcCI6MTc1MzI5MzYyOX1dLCJzZXNzaW9uX2lkIjoiODEyMzY4YmItODhiYi00Y2I2LWE4MmEtYTczNjFiZjJjYmU3IiwiaXNfYW5vbnltb3VzIjpmYWxzZX0.Zay_AtE_Pk0-kvbWMn-sZQ86wl5Paj1DRDeTsoZCxvs"
+token = "eyJhbGciOiJIUzI1NiIsImtpZCI6IlR6cDluOVBhNGNIVDFyZW8iLCJ0eXAiOiJKV1QifQ.eyJpc3MiOiJodHRwczovL21saW5hZGdldnBhYWJxcnFnb2diLnN1cGFiYXNlLmNvL2F1dGgvdjEiLCJzdWIiOiI2YzI0YTVjZC0yYmIwLTQ0NjUtOGIxZS1jYWNmY2ZlN2Q1MDkiLCJhdWQiOiJhdXRoZW50aWNhdGVkIiwiZXhwIjoxNzUzMzg0MTE2LCJpYXQiOjE3NTMzODA1MTYsImVtYWlsIjoidGVzdDExMUBnbWFpbC5jb20iLCJwaG9uZSI6IiIsImFwcF9tZXRhZGF0YSI6eyJwcm92aWRlciI6ImVtYWlsIiwicHJvdmlkZXJzIjpbImVtYWlsIl19LCJ1c2VyX21ldGFkYXRhIjp7ImVtYWlsX3ZlcmlmaWVkIjp0cnVlfSwicm9sZSI6ImF1dGhlbnRpY2F0ZWQiLCJhYWwiOiJhYWwxIiwiYW1yIjpbeyJtZXRob2QiOiJwYXNzd29yZCIsInRpbWVzdGFtcCI6MTc1MzM4MDUxNn1dLCJzZXNzaW9uX2lkIjoiNDlkZGRjOTEtNDI5My00ZTM0LTk3Y2QtMTc5YzAzMzBkMDFkIiwiaXNfYW5vbnltb3VzIjpmYWxzZX0.d5tocuLjxjOF3EoR9H9IjqE3DtVjHOi1UCqzWVyyGE4"
 BASE_URL = "http://localhost:8020/api"
 headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
 
@@ -23,6 +23,7 @@ def send_message(conversation_id, user_message):
     if conversation_history:
         context = "\n".join([f"{msg['sender']}: {msg['text']}" for msg in conversation_history])
         enhanced_message += f"\n\nRecent context:\n{context}"
+        print(enhanced_message)
 
     data = {
         "sender": "USER",
@@ -75,7 +76,7 @@ async def main():
     print("Type 'exit' to save and quit, 'quit' to exit without saving")
     print("-" * 50)
 
-    conversation_id = "78bb063f-31c5-4fe2-b98d-5e1e1029062e"
+    conversation_id = "2eb23060-5dd1-41ab-8152-1d3a89538e25"
 
     while True:
         user_input = input("\n👤 You: ").strip()
@@ -121,7 +122,7 @@ async def main():
                     break
             else:
                 # Check if conversation is completed (is_completed = True)
-                if ai_reply.get("is_completed", False):
+                if ai_reply.get("is_completed", True):
                     print(f"\n🤖 AI: {ai_reply}")
                     print("\n✨ Conversation complete! Auto-saving...")
                     # if save_database(ai_reply):

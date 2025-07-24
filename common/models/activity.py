@@ -27,6 +27,9 @@ class ActivityEntry(
     )
 
     # Common activity fields
-    mental_state: Mapped[str] = mapped_column(String)
-    energy_level: Mapped[int | None] = mapped_column()
-    notes: Mapped[str | None] = mapped_column(String)
+    mental_state: Mapped[str] = mapped_column(String, doc="Mental state during activity")
+    energy_level: Mapped[int | None] = mapped_column(doc="Energy level during activity")
+    notes: Mapped[str | None] = mapped_column(
+        String,
+        doc="Additional notes about the activity",
+    )

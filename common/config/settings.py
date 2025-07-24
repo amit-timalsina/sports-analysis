@@ -58,7 +58,7 @@ class OpenAISettings(AppBaseSettings):
     api_key: str = Field(default="", description="OpenAI API key")
     whisper_model: str = Field(default="whisper-1", description="Whisper model for transcription")
     gpt_model: str = Field(
-        default="gpt-4o-2024-08-06",
+        default="gpt-4.1",
         description="GPT model for structured extraction",
     )
     max_tokens: int = Field(default=500, description="Maximum tokens for responses")

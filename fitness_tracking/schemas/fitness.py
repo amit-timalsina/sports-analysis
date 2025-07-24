@@ -1,7 +1,6 @@
 """Fitness activity Pydantic schemas for API contracts."""
 
 from datetime import time
-from typing import Any
 
 from pydantic import Field, model_validator
 
@@ -53,10 +52,6 @@ class FitnessEntryCreate(FitnessEntryBase):
     start_time: time | None = Field(None, description="Start time")
     end_time: time | None = Field(None, description="End time")
 
-    # Additional fields
-    energy_level: int | None = Field(None, ge=1, le=10, description="Energy level 1-10")
-    notes: str | None = Field(None, description="Additional notes")
-
     @model_validator(mode="after")
     def validate_heart_rates(self) -> "FitnessEntryCreate":
         """Validate that max heart rate is greater than average heart rate."""
@@ -77,6 +72,9 @@ class FitnessEntryUpdate(AppBaseModel):
     exercise_name: str | None = None
     duration_minutes: int | None = Field(None, gt=0)
     intensity: IntensityLevel | None = None
+    mental_state: str | None = None
+    energy_level: int | None = Field(None, ge=1, le=10)
+    notes: str | None = None
     calories_burned: int | None = Field(None, ge=0)
     distance_km: float | None = Field(None, ge=0.0)
     sets: int | None = Field(None, ge=0)
@@ -94,32 +92,19 @@ class FitnessEntryUpdate(AppBaseModel):
     trainer_name: str | None = None
     start_time: time | None = None
     end_time: time | None = None
-    data_quality_score: float | None = Field(None, ge=0.0, le=1.0)
-    manual_overrides: dict[str, Any] | None = None
-    validation_notes: str | None = None
-    energy_level: int | None = Field(None, ge=1, le=10)
-    notes: str | None = None
+
+    @model_validator(mode="after")
+    def validate_heart_rates(self) -> "FitnessEntryUpdate":
+        """Validate that max heart rate is greater than average heart rate."""
+        if (
+            self.heart_rate_avg is not None
+            and self.heart_rate_max is not None
+            and self.heart_rate_max < self.heart_rate_avg
+        ):
+            msg = "Maximum heart rate cannot be less than average heart rate"
+            raise ValueError(msg)
+        return self
 
 
-class FitnessEntryRead(PrimaryKeyBase, TimestampBase, FitnessEntryBase):
+class FitnessEntryRead(PrimaryKeyBase, TimestampBase, FitnessEntryCreate):
     """Schema for reading fitness entry data."""
-
-    calories_burned: int | None
-    distance_km: float | None
-    sets: int | None
-    reps: int | None
-    weight_kg: float | None
-    heart_rate_avg: int | None
-    heart_rate_max: int | None
-    workout_rating: int | None
-    equipment_used: list[str] | None
-    location: str | None
-    gym_name: str | None
-    weather_conditions: str | None
-    temperature: float | None
-    workout_partner: str | None
-    trainer_name: str | None
-    start_time: time | None
-    end_time: time | None
-    energy_level: int | None
-    notes: str | None

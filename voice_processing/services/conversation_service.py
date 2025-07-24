@@ -657,20 +657,10 @@ Return ONLY the question text, nothing else."""
         system_prompt = """You are an expert fitness tracker analyzer for young
 cricket players.
 
-CRITICAL: You MUST extract fitness data and return it in the EXACT format
-specified by the schema.
-
-For fitness_type, you MUST use EXACTLY one of these values:
-- "running" (for jog, jogging, run, sprint, etc.)
-- "strength_training" (for gym, weights, lifting, etc.)
-- "cricket_specific" (for cricket training, cricket fitness)
-- "cardio" (for cardiovascular, aerobic, cycling, swimming)
-- "flexibility" (for stretching, yoga, pilates)
-- "general_fitness" (for general workout, exercise, fitness)
-
-For intensity, you MUST use EXACTLY one of: "low", "medium", "high"
-
-Map similar terms to the allowed values. Extract only information explicitly mentioned."""
+CRITICAL:
+- You MUST extract fitness data and return it in the EXACT format specified by the schema.
+- Don't make up information. Only extract what is present in the transcript.
+"""
 
         completion = await client.beta.chat.completions.parse(
             model=settings.openai.gpt_model,

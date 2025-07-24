@@ -15,11 +15,12 @@ logger = get_logger(__name__)
 
 required_fields_by_activity_type: dict[ActivityType, list[str]] = {
     ActivityType.FITNESS: [
-        "fitness_type",
+        "exercise_type",
+        "exercise_name",
         "duration_minutes",
         "intensity",
+        "calories_burned",
         "mental_state",
-        "energy_level",
     ],
     ActivityType.CRICKET_COACHING: [
         "session_type",
@@ -103,6 +104,8 @@ class AIService:
     Context - Already collected: {collected_data}
     User message: {user_message}
     Missing field: {next_field}
+    ask the question about {missing_fields} all in one go, do not ask multiple questions.
+    if you cannot collect the all the value of {next_field}, then ask about the next field in the list of missing fields.
 
     Rules:
     1. Keep it simple and age-appropriate

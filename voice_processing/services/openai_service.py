@@ -19,6 +19,8 @@ from fitness_tracking.schemas.cricket_coaching import (
     CricketCoachingDataExtraction,
 )
 from fitness_tracking.schemas.cricket_match_data_extraction import CricketMatchDataExtraction
+from fitness_tracking.schemas.enums.exercise_type import ExerciseType
+from fitness_tracking.schemas.enums.intensity_level import IntensityLevel
 from fitness_tracking.schemas.fitness_data_extraction import FitnessDataExtraction
 from fitness_tracking.schemas.rest_day_data_extraction import RestDayDataExtraction
 from voice_processing.schemas.processing import TranscriptionResponse
@@ -66,7 +68,8 @@ class OpenAIService:
     def _convert_webm_to_wav(self, webm_data: bytes) -> bytes:
         """Convert WebM audio to WAV format using ffmpeg."""
         if len(webm_data) == 0:
-            raise OpenAIServiceError("Cannot convert empty WebM data")
+            msg = "Cannot convert empty WebM data"
+            raise OpenAIServiceError(msg)
 
         logger.info("Starting WebM to WAV conversion: %d bytes input", len(webm_data))
 
@@ -438,32 +441,23 @@ class OpenAIService:
         if client is None:
             logger.info("Mock fitness data extraction for testing")
             return {
-                "fitness_type": "running",
+                "exercise_type": ExerciseType.RUNNING,
                 "duration_minutes": 30,
-                "intensity": "medium",
+                "intensity": IntensityLevel.MEDIUM,
                 "details": "Mock details from transcript",
                 "mental_state": "good",
                 "energy_level": 4,
-                "timestamp": datetime.now(UTC).isoformat(),
+                "location": "local park",
             }
 
         try:
             # Enhanced system prompt for better structured output compliance
             system_prompt = """You are an expert fitness tracker analyzer for young cricket players.
 
-CRITICAL: You MUST extract fitness data and return it in the EXACT format specified by the schema.
-
-For fitness_type, you MUST use EXACTLY one of these values:
-- "running" (for jog, jogging, run, sprint, etc.)
-- "strength_training" (for gym, weights, lifting, etc.) 
-- "cricket_specific" (for cricket training, cricket fitness)
-- "cardio" (for cardiovascular, aerobic, cycling, swimming)
-- "flexibility" (for stretching, yoga, pilates)
-- "general_fitness" (for general workout, exercise, fitness)
-
-For intensity, you MUST use EXACTLY one of: "low", "medium", "high"
-
-Map similar terms to the allowed values. DO NOT use any other values."""
+CRITICAL:
+- You MUST extract fitness data and return it in the EXACT format specified by the schema.
+- Don't make up information. Only extract what is present in the transcript.
+"""
 
             # Use structured outputs with strict schema enforcement
             completion = await client.beta.chat.completions.parse(
@@ -475,18 +469,18 @@ Map similar terms to the allowed values. DO NOT use any other values."""
                     },
                     {
                         "role": "user",
-                        "content": f"Extract fitness information from this transcript. The user is a 15-year-old cricket player in Nepal: {transcript}",
+                        "content": f"Extract fitness information from this transcript: {transcript}",
                     },
                 ],
                 response_format=FitnessDataExtraction,
-                temperature=0.1,  # Lower temperature for more consistent extraction
+                temperature=0.0,  # Lower temperature for more consistent extraction
                 max_tokens=settings.openai.max_tokens,
             )
 
             # Enhanced error handling for parsing
             if not completion.choices:
                 logger.warning("No choices in OpenAI response")
-                return self._extract_fitness_fallback(transcript)
+                return {}
 
             choice = completion.choices[0]
             if not choice.message.parsed:
@@ -494,57 +488,21 @@ Map similar terms to the allowed values. DO NOT use any other values."""
                 # Check if there was a parsing error
                 if choice.message.refusal:
                     logger.warning("OpenAI refused to parse: %s", choice.message.refusal)
-                return self._extract_fitness_fallback(transcript)
+                return {}
 
             # Parse the structured response - schema validation is automatic via Pydantic
             fitness_data = choice.message.parsed
 
             logger.info(
-                "Successfully extracted structured fitness data: fitness_type=%s",
-                fitness_data.fitness_type,
+                "Successfully extracted structured fitness data: exercise_type=%s",
+                fitness_data.exercise_type,
             )
 
-            # Convert to dictionary format expected by the system
-            result = {
-                "fitness_type": fitness_data.fitness_type,
-                "duration_minutes": fitness_data.duration_minutes,
-                "intensity": fitness_data.intensity,
-                "details": fitness_data.details,
-                "mental_state": fitness_data.mental_state,
-                "energy_level": fitness_data.energy_level,
-                "distance_km": fitness_data.distance_km,
-                "calories_burned": fitness_data.calories_burned,
-                "location": fitness_data.location,
-                "timestamp": datetime.now(UTC).isoformat(),
-            }
+            return fitness_data.model_dump()
 
-            # Final validation to ensure we have valid enum values
-            if fitness_data.fitness_type not in [
-                "running",
-                "strength_training",
-                "cricket_specific",
-                "cardio",
-                "flexibility",
-                "general_fitness",
-            ]:
-                logger.warning(
-                    "Invalid fitness_type received: %s, using fallback",
-                    fitness_data.fitness_type,
-                )
-                return self._extract_fitness_fallback(transcript)
-
-            if fitness_data.intensity not in ["low", "medium", "high"]:
-                logger.warning(
-                    "Invalid intensity received: %s, using fallback",
-                    fitness_data.intensity,
-                )
-                return self._extract_fitness_fallback(transcript)
-
-            return result
-
-        except Exception as e:
-            logger.exception("Fitness data extraction failed: %s", e)
-            return self._extract_fitness_fallback(transcript)
+        except Exception:
+            logger.exception("Fitness data extraction failed")
+            return {}
 
     def _extract_fitness_fallback(self, transcript: str) -> dict[str, Any]:
         """Fallback fitness data extraction using keyword matching with guaranteed valid values."""
