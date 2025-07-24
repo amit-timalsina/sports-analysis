@@ -3,6 +3,7 @@
 import re
 from datetime import UTC, datetime
 from typing import Any, Literal
+from uuid import UUID
 
 from pydantic import Field, field_validator
 
@@ -63,7 +64,7 @@ class WebSocketMessage(AppBaseModel):
     """Schema for WebSocket messages."""
 
     type: str = Field(description="Message type")
-    session_id: str = Field(description="Session identifier")
+    session_id: UUID = Field(description="Session identifier")
     data: dict[str, Any] | None = Field(default=None, description="Message data")
     error: str | None = Field(default=None, description="Error message if any")
     message: str | None = Field(default=None, description="Human readable message")

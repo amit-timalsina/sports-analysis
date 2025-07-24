@@ -343,7 +343,7 @@
         let isRecording = false;
         let mediaRecorder = null;
         let audioStream = null;
-        let currentSessionId = 'session_' + Date.now();
+        let currentSessionId = crypto.randomUUID();
         // Turn counter for conversation flow visualization
         let flowTurn = 0;
 
@@ -403,7 +403,7 @@
 
         function connectWebSocket() {
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            const wsUrl = `${protocol}//${window.location.host}/api/websocket/${currentSessionId}`;
+            const wsUrl = `${protocol}//${window.location.host}/api/voice_ws/ws/${currentSessionId}`;
 
             socket = new WebSocket(wsUrl);
             

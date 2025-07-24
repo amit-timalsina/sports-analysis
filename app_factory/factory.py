@@ -16,7 +16,7 @@ from voice_processing.routers.audio_router import router as voice_audio_router
 from voice_processing.routers.chat_message_router import router as message_router
 from voice_processing.routers.conversation_router import router as conversation_router
 from voice_processing.routers.session_router import router as voice_session_router
-from voice_processing.routers.websocket_routerV2 import router as voice_websocket_router
+from voice_processing.routers.websocket_router import router as voice_websocket_router
 
 logger = get_logger(__name__)
 
