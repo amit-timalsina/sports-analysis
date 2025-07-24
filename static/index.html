@@ -403,8 +403,8 @@
 
         function connectWebSocket() {
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            const wsUrl = `${protocol}//${window.location.host}/ws/voice/${currentSessionId}`;
-            
+            const wsUrl = `${protocol}//${window.location.host}/api/websocket/${currentSessionId}`;
+
             socket = new WebSocket(wsUrl);
             
             socket.onopen = function() {
@@ -964,15 +964,39 @@
         }
 
         // API Request Helper Function
+        // async function apiRequest(endpoint) {
+        //     try {
+        //         const response = await fetch(endpoint);
+        //         const data = await response.json();
+        //         return JSON.stringify(data, null, 2);
+        //     } catch (error) {
+        //         return `Error: ${error.message}`;
+        //     }
+        // }
         async function apiRequest(endpoint) {
+            const token = localStorage.getItem("token");  // ⬅️ get token from localStorage
+
             try {
-                const response = await fetch(endpoint);
+                const response = await fetch(endpoint, {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`,  // ⬅️ send token in header
+                    },
+                });
+
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    return `Error ${response.status}: ${errorText}`;
+                }
+
                 const data = await response.json();
                 return JSON.stringify(data, null, 2);
             } catch (error) {
                 return `Error: ${error.message}`;
             }
         }
+
 
         async function loadFitnessCharts() {
             const btn = event.target;
@@ -1045,7 +1069,8 @@
             btn.disabled = true;
             
             responseEl.classList.remove('hidden');
-            responseEl.textContent = await apiRequest('/api/entries/fitness');
+            
+            responseEl.textContent = await apiRequest('/api/entries/fitness',);
             
             btn.innerHTML = '🏃 Load Fitness Entries';
             btn.disabled = false;

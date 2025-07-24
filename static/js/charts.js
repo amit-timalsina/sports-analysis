@@ -39,8 +39,12 @@ class AnalyticsCharts {
     async renderFitnessAnalytics() {
         try {
             console.log('📊 Loading fitness analytics...');
-            
-            const response = await fetch('/api/analytics/fitness');
+            const response = await fetch('/api/analytics/fitness', {
+                headers: {
+                    'Authorization': `Bearer ${localStorage.getItem('token')}`
+                }
+            });
+            ;
             const data = await response.json();
             
             if (!data.success) {

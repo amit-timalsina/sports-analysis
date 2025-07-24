@@ -863,7 +863,7 @@ class MobileDashboard {
         // Remove active class from all tabs
         document.querySelectorAll('.nav-tab').forEach(tab => {
             tab.classList.remove('active');
-        });
+        }); 
         
         // Add active class to clicked tab
         const activeTab = document.querySelector(`[data-tab="${tabName}"]`);
@@ -975,6 +975,9 @@ class MobileDashboard {
         }
     }
 
+  
+
+
     async fetchEntries(type, limit = 10) {
         try {
             const endpoints = {
@@ -984,7 +987,12 @@ class MobileDashboard {
                 'rest_day': '/api/entries/rest-days'
             };
 
-            const response = await fetch(`${endpoints[type]}?limit=${limit}`);
+
+            const response = await fetch(`${endpoints[type]}?limit=${limit}`, {
+                headers: {
+                    'Authorization': `Bearer ${localStorage.getItem('token')}`
+                }
+            });
             if (!response.ok) {
                 throw new Error(`Failed to load ${type} entries: ${response.status} ${response.statusText}`);
             }

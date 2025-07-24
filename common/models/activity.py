@@ -3,18 +3,12 @@
 from sqlalchemy import UUID, Enum, ForeignKey, String
 from sqlalchemy.orm import Mapped, mapped_column
 
-from common.mixins.relationship_factories import user_relationship_factory
 from database.base import ProductionBase
 from fitness_tracking.schemas.enums.activity_type import ActivityType
 
 
 class ActivityEntry(
     ProductionBase,
-    user_relationship_factory(  # type: ignore[misc]
-        back_populates="conversations",
-        ondelete="SET NULL",
-        nullable=True,
-    ),
 ):
     """Enhanced base model for all activity entries with stronger conversation relationship."""
 

@@ -30,7 +30,7 @@ async def get_fitness_analytics(
     try:
         repository = FitnessEntryRepository(session)
         entries = await repository.read_recent_entries(
-            current_user=None,
+            current_user=current_user,
             days=days_back,
             limit=1000,
         )

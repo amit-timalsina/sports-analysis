@@ -5,6 +5,10 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from common.mixins.relationship_factories import user_relationship_factory
 from database.base import ProductionBase
+from fitness_tracking.models.cricket_coaching import CricketCoachingEntry
+from fitness_tracking.models.cricket_match import CricketMatchEntry
+from fitness_tracking.models.fitness import FitnessEntry
+from fitness_tracking.models.rest_day import RestDayEntry
 from fitness_tracking.schemas.enums.activity_type import ActivityType
 
 if TYPE_CHECKING:
@@ -38,10 +42,24 @@ class Conversation(
         order_by="ChatMessage.created_at",
         lazy="selectin",
     )
-    activity_entries: Mapped[list["ActivityEntry"]] = relationship(
+    cricket_match_entries: Mapped[list["CricketMatchEntry"]] = relationship(
         back_populates="conversation",
         cascade="all, delete-orphan",
-        order_by="ActivityEntry.created_at",
+        lazy="selectin",
+    )
+    cricket_coaching_entries: Mapped[list["CricketCoachingEntry"]] = relationship(
+        back_populates="conversation",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
+    fitness_entries: Mapped[list["FitnessEntry"]] = relationship(
+        back_populates="conversation",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
+    rest_day_entries: Mapped[list["RestDayEntry"]] = relationship(
+        back_populates="conversation",
+        cascade="all, delete-orphan",
         lazy="selectin",
     )
 

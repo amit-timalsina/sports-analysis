@@ -5,7 +5,6 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
-from common.schemas.entry_type import EntryType
 from fitness_tracking.models.cricket_coaching import CricketCoachingEntry
 from fitness_tracking.models.cricket_match import CricketMatchEntry
 from fitness_tracking.repositories.cricket_coaching_repository import CricketCoachingEntryRepository
@@ -14,6 +13,7 @@ from fitness_tracking.repositories.cricket_match_repository import (
 )
 from fitness_tracking.repositories.fitness_repository import FitnessEntryRepository
 from fitness_tracking.repositories.rest_day_repository import RestDayEntryRepository
+from fitness_tracking.schemas.enums.activity_type import ActivityType
 from fitness_tracking.schemas.enums.exercise_type import ExerciseType
 from fitness_tracking.schemas.enums.intensity_level import IntensityLevel
 from fitness_tracking.schemas.fitness import FitnessEntryCreate, FitnessEntryRead
@@ -27,7 +27,7 @@ from voice_processing.repositories import (
 from voice_processing.repositories.chat_message_repository import (
     ConversationMessageRepository,
 )
-from voice_processing.schemas.conversation_old import (
+from voice_processing.schemas.conversation import (
     ConversationCreate,
     ConversationMessageCreate,
     ConversationRead,
@@ -209,7 +209,7 @@ class ConversationCompletionService:
                 user_id=result.final_data["user_id"],
                 session_id=result.session_id,
                 conversation_id=conversation_id,  # Use UUID directly
-                entry_type=EntryType.FITNESS,
+                entry_type=ActivityType.FITNESS,
                 original_transcript=result.final_data.get("original_transcript", ""),
                 overall_confidence_score=result.data_quality_score,
                 # Required timestamp

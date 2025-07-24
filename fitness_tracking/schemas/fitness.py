@@ -53,11 +53,7 @@ class FitnessEntryCreate(FitnessEntryBase):
     start_time: time | None = Field(None, description="Start time")
     end_time: time | None = Field(None, description="End time")
 
-    # Data quality tracking
-    processing_duration: float | None = Field(None, ge=0.0, description="Processing duration")
-    data_quality_score: float | None = Field(None, ge=0.0, le=1.0, description="Data quality score")
-    manual_overrides: dict[str, Any] | None = Field(None, description="Manual data overrides")
-    validation_notes: str | None = Field(None, description="Validation notes")
+    # Additional fields
     energy_level: int | None = Field(None, ge=1, le=10, description="Energy level 1-10")
     notes: str | None = Field(None, description="Additional notes")
 
@@ -125,9 +121,5 @@ class FitnessEntryRead(PrimaryKeyBase, TimestampBase, FitnessEntryBase):
     trainer_name: str | None
     start_time: time | None
     end_time: time | None
-    processing_duration: float | None
-    data_quality_score: float | None
-    manual_overrides: dict[str, Any] | None
-    validation_notes: str | None
     energy_level: int | None
     notes: str | None

@@ -7,6 +7,7 @@ from sqlalchemy import JSON, String
 from sqlalchemy import Enum as SA_Enum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from common.mixins.relationship_factories import user_relationship_factory
 from common.models.activity import ActivityEntry
 from fitness_tracking.schemas.enums.activity_type import ActivityType
 from fitness_tracking.schemas.enums.exercise_type import ExerciseType
@@ -16,7 +17,14 @@ if TYPE_CHECKING:
     from voice_processing.models.conversation import Conversation
 
 
-class FitnessEntry(ActivityEntry):
+class FitnessEntry(
+    ActivityEntry,
+    user_relationship_factory(  # type: ignore[misc]
+        back_populates="fitness_entries",
+        ondelete="SET NULL",
+        nullable=True,
+    ),
+):
     """Model for fitness activity entries."""
 
     __tablename__ = "fitness_entries"
@@ -64,5 +72,5 @@ class FitnessEntry(ActivityEntry):
     end_time: Mapped[time | None] = mapped_column()
     # relationship to conversation
     conversation: Mapped["Conversation"] = relationship(
-        back_populates="activity_entries",
+        back_populates="fitness_entries",
     )

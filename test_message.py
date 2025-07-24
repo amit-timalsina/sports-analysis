@@ -44,29 +44,29 @@ def get_ai_reply(message_id):
     return response.json()
 
 
-async def save_database():
-    """Save conversation to database"""
-    async for session in get_session():
-        cricket_match_repo = CricketMatchEntryRepository(session=session)
-        ai_reply = CricketMatchEntryCreate(
-            conversation_id="78bb063f-31c5-4fe2-b98d-5e1e1029062e",
-            mental_state="peace",
-            sender="AI",
-            user_message=None,
-            is_read=True,
-            is_completed=True,
-            # Required cricket match fields
-            match_format=MatchFormat.T20,
-            opposition_team="Test Team",
-            venue="Test Venue",
-            home_away="home",
-            result="won",
-            team_name="My Team",
-        )
+# async def save_database():
+#     """Save conversation to database"""
+#     async for session in get_session():
+#         cricket_match_repo = CricketMatchEntryRepository(session=session)
+#         ai_reply = CricketMatchEntryCreate(
+#             conversation_id="78bb063f-31c5-4fe2-b98d-5e1e1029062e",
+#             mental_state="peace",
+#             sender="AI",
+#             user_message=None,
+#             is_read=True,
+#             is_completed=True,
+#             # Required cricket match fields
+#             match_format=MatchFormat.T20,
+#             opposition_team="Test Team",
+#             venue="Test Venue",
+#             home_away="home",
+#             result="won",
+#             team_name="My Team",
+#         )
 
-        # Save to database
-        result = await cricket_match_repo.create(ai_reply)
-        return result
+#         # Save to database
+#         result = await cricket_match_repo.create(ai_reply)
+#         return result
 
 
 async def main():
@@ -85,8 +85,8 @@ async def main():
             break
 
         if user_input.lower() == "exit":
-            if save_database(conversation_id):
-                print("✅ Conversation saved!")
+            # if save_database(conversation_id):
+            #     print("✅ Conversation saved!")
             print("👋 Goodbye!")
             break
 
@@ -111,23 +111,23 @@ async def main():
                     # Check if conversation is complete
                     if ai_reply["ai_extraction"]["follow_up_question"] is None:
                         print("\n✨ Conversation complete! Saving...")
-                        if save_database(conversation_id):
-                            print("✅ Saved successfully!")
+                        # if save_database(conversation_id):
+                        #     print("✅ Saved successfully!")
                         break
                 else:
                     print("✨ No more questions. Saving...")
-                    if save_database(conversation_id):
-                        print("✅ Saved successfully!")
+                    # if save_database(conversation_id):
+                    #     print("✅ Saved successfully!")
                     break
             else:
                 # Check if conversation is completed (is_completed = True)
                 if ai_reply.get("is_completed", False):
                     print(f"\n🤖 AI: {ai_reply}")
                     print("\n✨ Conversation complete! Auto-saving...")
-                    if save_database(ai_reply):
-                        print("✅ Saved successfully!")
-                    else:
-                        print("❌ Failed to save")
+                    # if save_database(ai_reply):
+                    #     print("✅ Saved successfully!")
+                    # else:
+                    #     print("❌ Failed to save")
                     break
                 else:
                     print(f"\n🤖 AI: {ai_reply}")

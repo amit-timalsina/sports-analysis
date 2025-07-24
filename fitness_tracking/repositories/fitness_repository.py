@@ -64,16 +64,16 @@ class FitnessEntryRepository(
         filter_condition = FitnessEntry.exercise_type == exercise_type
 
         if start_date:
-            filter_condition &= FitnessEntry.activity_timestamp >= start_date
+            filter_condition &= FitnessEntry.created_at >= start_date
         if end_date:
-            filter_condition &= FitnessEntry.activity_timestamp <= end_date
+            filter_condition &= FitnessEntry.created_at <= end_date
 
         return await self.read_multi_by_filter(
             filter_condition,
             current_user=current_user,
             offset=offset,
             limit=limit,
-            order_by=FitnessEntry.activity_timestamp.desc(),
+            order_by=FitnessEntry.created_at.desc(),
         )
 
     async def read_recent_entries(
@@ -86,11 +86,11 @@ class FitnessEntryRepository(
         """Get recent fitness entries."""
         cutoff_date = datetime.now(UTC) - timedelta(days=days)
         return await self.read_multi_by_filter(
-            FitnessEntry.activity_timestamp >= cutoff_date,
+            FitnessEntry.created_at >= cutoff_date,
             current_user=current_user,
             offset=offset,
             limit=limit,
-            order_by=FitnessEntry.activity_timestamp.desc(),
+            order_by=FitnessEntry.created_at.desc(),
         )
 
     @classmethod
