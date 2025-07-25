@@ -93,9 +93,9 @@ class RestDayEntryRead(PrimaryKeyBase, TimestampBase, RestDayEntryBase):
     hydration_liters: float | None
     protein_focus: bool | None
     nutrition_notes: str | None
-    processing_duration: float | None
-    data_quality_score: float | None
-    manual_overrides: dict[str, Any] | None
-    validation_notes: str | None
+    # processing_duration: float | None
+    # data_quality_score: float | None
+    # manual_overrides: dict[str, Any] | None
+    # validation_notes: str | None
     energy_level: int | None
     notes: str | None

@@ -89,10 +89,10 @@ class CricketCoachingEntryRead(PrimaryKeyBase, TimestampBase, CricketCoachingEnt
     group_size: int | None
     start_time: time | None
     end_time: time | None
-    processing_duration: float | None
-    data_quality_score: float | None
-    manual_overrides: dict[str, Any] | None
-    validation_notes: str | None
+    # processing_duration: float | None
+    # data_quality_score: float | None
+    # manual_overrides: dict[str, Any] | None
+    # validation_notes: str | None
     energy_level: int | None
     notes: str | None
 
