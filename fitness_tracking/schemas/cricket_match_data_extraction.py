@@ -10,10 +10,17 @@ from common.schemas import AppBaseModel
 class CricketMatchDataExtraction(AppBaseModel):
     """Schema for structured cricket match data extraction from voice input."""
 
-    match_type: Literal["tournament", "practice", "friendly"] | None = Field(
+    match_format: Literal["tournament", "practice", "friendly"] | None = Field(
         None,
         description="Type of match",
     )
+    opposition_team: str | None = Field(None, description="Name of the opposition team")
+
+    venue: str | None = Field(None, description="Match venue")
+    home_away: str | None = Field(None, description="Home, away, or neutral venue")
+    result: str | None = Field(None, description="Match result (won, lost, draw, no_result)")
+    team_name: str | None = Field(None, description="Your team name")
+
     opposition_strength: str | None = Field(None, description="Opposition strength description")
     runs_scored: int | None = Field(None, ge=0, description="Runs scored")
     balls_faced: int | None = Field(None, ge=0, description="Balls faced")

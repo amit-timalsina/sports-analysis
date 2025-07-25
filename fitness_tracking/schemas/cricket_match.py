@@ -103,14 +103,6 @@ class CricketMatchEntryCreate(CricketMatchEntryBase):
     match_fee: float | None = Field(None, ge=0.0, description="Match fee received")
     travel_distance_km: float | None = Field(None, ge=0.0, description="Travel distance")
 
-    # Data quality tracking
-    processing_duration: float | None = Field(None, ge=0.0, description="Processing duration")
-    data_quality_score: float | None = Field(None, ge=0.0, le=1.0, description="Data quality score")
-    manual_overrides: dict[str, Any] | None = Field(None, description="Manual data overrides")
-    validation_notes: str | None = Field(None, description="Validation notes")
-    energy_level: int | None = Field(None, ge=1, le=10, description="Energy level 1-10")
-    notes: str | None = Field(None, description="Additional notes")
-
 
 class CricketMatchEntryUpdate(AppBaseModel):
     """Schema for updating a cricket match entry."""

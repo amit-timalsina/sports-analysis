@@ -8,7 +8,7 @@ from fitness_tracking.schemas.cricket_match import CricketMatchEntryCreate
 from fitness_tracking.schemas.enums import MatchFormat
 
 # Configuration
-token = "eyJhbGciOiJIUzI1NiIsImtpZCI6IlR6cDluOVBhNGNIVDFyZW8iLCJ0eXAiOiJKV1QifQ.eyJpc3MiOiJodHRwczovL21saW5hZGdldnBhYWJxcnFnb2diLnN1cGFiYXNlLmNvL2F1dGgvdjEiLCJzdWIiOiI2YzI0YTVjZC0yYmIwLTQ0NjUtOGIxZS1jYWNmY2ZlN2Q1MDkiLCJhdWQiOiJhdXRoZW50aWNhdGVkIiwiZXhwIjoxNzUzMzg0MTE2LCJpYXQiOjE3NTMzODA1MTYsImVtYWlsIjoidGVzdDExMUBnbWFpbC5jb20iLCJwaG9uZSI6IiIsImFwcF9tZXRhZGF0YSI6eyJwcm92aWRlciI6ImVtYWlsIiwicHJvdmlkZXJzIjpbImVtYWlsIl19LCJ1c2VyX21ldGFkYXRhIjp7ImVtYWlsX3ZlcmlmaWVkIjp0cnVlfSwicm9sZSI6ImF1dGhlbnRpY2F0ZWQiLCJhYWwiOiJhYWwxIiwiYW1yIjpbeyJtZXRob2QiOiJwYXNzd29yZCIsInRpbWVzdGFtcCI6MTc1MzM4MDUxNn1dLCJzZXNzaW9uX2lkIjoiNDlkZGRjOTEtNDI5My00ZTM0LTk3Y2QtMTc5YzAzMzBkMDFkIiwiaXNfYW5vbnltb3VzIjpmYWxzZX0.d5tocuLjxjOF3EoR9H9IjqE3DtVjHOi1UCqzWVyyGE4"
+token = "eyJhbGciOiJIUzI1NiIsImtpZCI6IlR6cDluOVBhNGNIVDFyZW8iLCJ0eXAiOiJKV1QifQ.eyJpc3MiOiJodHRwczovL21saW5hZGdldnBhYWJxcnFnb2diLnN1cGFiYXNlLmNvL2F1dGgvdjEiLCJzdWIiOiI2YzI0YTVjZC0yYmIwLTQ0NjUtOGIxZS1jYWNmY2ZlN2Q1MDkiLCJhdWQiOiJhdXRoZW50aWNhdGVkIiwiZXhwIjoxNzUzNDMyNTMyLCJpYXQiOjE3NTM0Mjg5MzIsImVtYWlsIjoidGVzdDExMUBnbWFpbC5jb20iLCJwaG9uZSI6IiIsImFwcF9tZXRhZGF0YSI6eyJwcm92aWRlciI6ImVtYWlsIiwicHJvdmlkZXJzIjpbImVtYWlsIl19LCJ1c2VyX21ldGFkYXRhIjp7ImVtYWlsX3ZlcmlmaWVkIjp0cnVlfSwicm9sZSI6ImF1dGhlbnRpY2F0ZWQiLCJhYWwiOiJhYWwxIiwiYW1yIjpbeyJtZXRob2QiOiJwYXNzd29yZCIsInRpbWVzdGFtcCI6MTc1MzQyODkzMn1dLCJzZXNzaW9uX2lkIjoiNmRmOTVhODEtOTU4Ni00YjU3LWFlNTYtYWQ1OTc3NDEzOTc4IiwiaXNfYW5vbnltb3VzIjpmYWxzZX0.ulqRY3dS1BI71eQ-G3An7ME8Iz1lCDndawSDcWaRs-E"
 BASE_URL = "http://localhost:8020/api"
 headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
 
@@ -76,7 +76,7 @@ async def main():
     print("Type 'exit' to save and quit, 'quit' to exit without saving")
     print("-" * 50)
 
-    conversation_id = "2eb23060-5dd1-41ab-8152-1d3a89538e25"
+    conversation_id = "0b8ed5e2-3d49-4358-9c92-770b4ad481c0"
 
     while True:
         user_input = input("\n👤 You: ").strip()

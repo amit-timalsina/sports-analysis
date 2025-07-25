@@ -15,14 +15,15 @@ class RestDayEntryBase(ActivityEntryBase):
     rest_type: str = Field(..., description="Type of rest (active, complete, partial)")
     planned: bool = Field(default=False, description="Whether this was a planned rest day")
 
+    sleep_hours: float = Field(..., ge=0.0, le=24.0, description="Hours of sleep")
+    sleep_quality: int = Field(..., ge=1, le=10, description="Sleep quality 1-10")
+
 
 class RestDayEntryCreate(RestDayEntryBase):
     """Schema for creating a rest day entry."""
 
     # Recovery activities
     recovery_activities: list[str] | None = Field(None, description="Recovery activities performed")
-    sleep_hours: float | None = Field(None, ge=0.0, le=24.0, description="Hours of sleep")
-    sleep_quality: int | None = Field(None, ge=1, le=10, description="Sleep quality 1-10")
 
     # Physical state
     muscle_soreness: int | None = Field(None, ge=1, le=10, description="Muscle soreness level 1-10")
@@ -47,14 +48,6 @@ class RestDayEntryCreate(RestDayEntryBase):
     hydration_liters: float | None = Field(None, ge=0.0, description="Water intake in liters")
     protein_focus: bool | None = Field(None, description="Whether focused on protein intake")
     nutrition_notes: str | None = Field(None, description="Nutrition notes")
-
-    # Data quality tracking
-    processing_duration: float | None = Field(None, ge=0.0, description="Processing duration")
-    data_quality_score: float | None = Field(None, ge=0.0, le=1.0, description="Data quality score")
-    manual_overrides: dict[str, Any] | None = Field(None, description="Manual data overrides")
-    validation_notes: str | None = Field(None, description="Validation notes")
-    energy_level: int | None = Field(None, ge=1, le=10, description="Energy level 1-10")
-    notes: str | None = Field(None, description="Additional notes")
 
 
 class RestDayEntryUpdate(AppBaseModel):

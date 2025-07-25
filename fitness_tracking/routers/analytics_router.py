@@ -97,7 +97,7 @@ async def get_combined_analytics(
         match_repository = CricketMatchEntryRepository(session)
 
         fitness_entries = await fitness_repository.read_recent_entries(
-            current_user=None,
+            current_user=current_user,
             days=days_back,
             limit=1000,
         )

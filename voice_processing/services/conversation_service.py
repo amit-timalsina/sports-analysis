@@ -10,7 +10,7 @@ from openai.types.chat.parsed_chat_completion import ParsedChatCompletion
 
 from common.config.settings import settings
 from common.exceptions import AppError
-from fitness_tracking.schemas.cricket_coaching import (
+from fitness_tracking.schemas.cricket_coaching_data_extraction import (
     CricketCoachingDataExtraction,
 )
 from fitness_tracking.schemas.cricket_match_data_extraction import CricketMatchDataExtraction

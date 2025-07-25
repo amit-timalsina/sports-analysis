@@ -15,7 +15,7 @@ from langfuse.openai import AsyncOpenAI
 
 from common.config.settings import settings
 from common.exceptions import AppError
-from fitness_tracking.schemas.cricket_coaching import (
+from fitness_tracking.schemas.cricket_coaching_data_extraction import (
     CricketCoachingDataExtraction,
 )
 from fitness_tracking.schemas.cricket_match_data_extraction import CricketMatchDataExtraction
@@ -582,8 +582,8 @@ CRITICAL:
                         "content": (
                             "You are an expert cricket coaching analyst for a 15-year-old "
                             "cricket player in Nepal. Extract cricket coaching session information "
-                            "from the user's voice transcript. Focus on batting drills, "
-                            "wicket keeping practice, technical skills, and performance feedback."
+                            "You MUST extract cricket coaching data and return it in the EXACT format specified by the schema."
+                            "Don't make up information. Only extract what is present in the transcript."
                         ),
                     },
                     {
@@ -596,28 +596,12 @@ CRITICAL:
                 max_tokens=settings.openai.max_tokens,
             )
 
-            if not completion.choices or not completion.choices[0].message.parsed:
-                return self._extract_cricket_coaching_fallback(transcript)
-
             coaching_data = completion.choices[0].message.parsed
-            return {
-                "session_type": coaching_data.session_type,
-                "duration_minutes": coaching_data.duration_minutes,
-                "what_went_well": coaching_data.what_went_well,
-                "areas_for_improvement": coaching_data.areas_for_improvement,
-                "skills_practiced": coaching_data.skills_practiced,
-                "self_assessment_score": coaching_data.self_assessment_score,
-                "confidence_level": coaching_data.confidence_level,
-                "focus_level": coaching_data.focus_level,
-                "mental_state": coaching_data.mental_state,
-                "coach_feedback": coaching_data.coach_feedback,
-                "difficulty_level": coaching_data.difficulty_level,
-                "learning_satisfaction": coaching_data.learning_satisfaction,
-            }
+            return coaching_data.model_dump()
 
         except Exception:
             logger.exception("Cricket coaching data extraction failed")
-            return self._extract_cricket_coaching_fallback(transcript)
+            return {}
 
     def _extract_cricket_coaching_fallback(self, transcript: str) -> dict[str, Any]:
         """Fallback cricket coaching data extraction."""
@@ -669,8 +653,8 @@ CRITICAL:
                         "role": "system",
                         "content": (
                             "You are an expert cricket match analyst for a 15-year-old "
-                            "cricket player in Nepal. Extract match performance data "
-                            "including batting stats, wicket keeping performance, and mental state."
+                            "You MUST extract cricket match performance data and return it in the EXACT format specified by the schema.  "
+                            "Don't make up information. Only extract what is present in the transcript."
                         ),
                     },
                     {
@@ -683,30 +667,12 @@ CRITICAL:
                 max_tokens=settings.openai.max_tokens,
             )
 
-            if not completion.choices or not completion.choices[0].message.parsed:
-                return self._extract_cricket_match_fallback(transcript)
-
             match_data = completion.choices[0].message.parsed
-            return {
-                "match_type": match_data.match_type,
-                "opposition_strength": match_data.opposition_strength,
-                "pre_match_nerves": match_data.pre_match_nerves,
-                "post_match_satisfaction": match_data.post_match_satisfaction,
-                "mental_state": match_data.mental_state,
-                "runs_scored": match_data.runs_scored,
-                "balls_faced": match_data.balls_faced,
-                "boundaries_4s": match_data.boundaries_4s,
-                "boundaries_6s": match_data.boundaries_6s,
-                "how_out": match_data.how_out,
-                "key_shots_played": match_data.key_shots_played,
-                "catches_taken": match_data.catches_taken,
-                "catches_dropped": match_data.catches_dropped,
-                "stumpings": match_data.stumpings,
-            }
+            return match_data.model_dump()
 
         except Exception:
             logger.exception("Cricket match data extraction failed")
-            return self._extract_cricket_match_fallback(transcript)
+            return {}
 
     def _extract_cricket_match_fallback(self, transcript: str) -> dict[str, Any]:
         """Fallback cricket match data extraction."""
@@ -756,8 +722,8 @@ CRITICAL:
                         "role": "system",
                         "content": (
                             "You are an expert recovery and wellness analyst for a 15-year-old "
-                            "cricket player in Nepal. Extract rest day information including "
-                            "physical state, mental state, and recovery activities."
+                            "You MUST extract cricket match performance data and return it in the EXACT format specified by the schema.  "
+                            "Don't make up information. Only extract what is present in the transcript."
                         ),
                     },
                     {
@@ -770,27 +736,12 @@ CRITICAL:
                 max_tokens=settings.openai.max_tokens,
             )
 
-            if not completion.choices or not completion.choices[0].message.parsed:
-                return self._extract_rest_day_fallback(transcript)
-
             rest_data = completion.choices[0].message.parsed
-            return {
-                "rest_type": rest_data.rest_type,
-                "physical_state": rest_data.physical_state,
-                "fatigue_level": rest_data.fatigue_level,
-                "energy_level": rest_data.energy_level,
-                "motivation_level": rest_data.motivation_level,
-                "mood_description": rest_data.mood_description,
-                "mental_state": rest_data.mental_state,
-                "soreness_level": rest_data.soreness_level,
-                "training_reflections": rest_data.training_reflections,
-                "goals_concerns": rest_data.goals_concerns,
-                "recovery_activities": rest_data.recovery_activities,
-            }
+            return rest_data.model_dump()
 
         except Exception:
             logger.exception("Rest day data extraction failed")
-            return self._extract_rest_day_fallback(transcript)
+            return {}
 
     def _extract_rest_day_fallback(self, transcript: str) -> dict[str, Any]:
         """Fallback rest day data extraction."""

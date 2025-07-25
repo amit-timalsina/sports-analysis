@@ -6,26 +6,35 @@ from common.schemas import AppBaseModel
 class RestDayDataExtraction(AppBaseModel):
     """Schema for structured rest day data extraction from voice."""
 
-    rest_type: str = Field(
-        ...,
+    rest_type: str | None = Field(
+        None,
         description="Type of rest day. Must be exactly one of: complete_rest, active_recovery, injury_recovery. Map similar terms: full rest/total rest -> complete_rest, light activity -> active_recovery, hurt/injured -> injury_recovery.",
     )
+    sleep_hours: float | None = Field(
+        None,
+        ge=0.0,
+        description="Total hours of sleep during the rest day. Must be a positive number.",
+    )
+    sleep_quality: str | None = Field(
+        None,
+        description="Sleep quality description. Use descriptive terms like 'very poor', 'poor', 'average', 'good', 'very good'.",
+    )
     planned: bool = Field(default=False, description="Whether this was a planned rest day")
-    physical_state: str = Field(..., description="Physical state during rest")
-    fatigue_level: str = Field(
-        ...,
+    physical_state: str | None = Field(None, description="Physical state during rest")
+    fatigue_level: str | None = Field(
+        None,
         description="Fatigue level - use descriptive terms like 'exhausted', 'tired', 'okay', 'fresh', 'energetic'",
     )
-    energy_level: str = Field(
-        ...,
+    energy_level: str | None = Field(
+        None,
         description="Energy level - use descriptive terms like 'very low', 'low', 'average', 'high', 'very high'",
     )
-    motivation_level: str = Field(
-        ...,
+    motivation_level: str | None = Field(
+        None,
         description="Motivation level - use descriptive terms like 'unmotivated', 'low', 'motivated', 'very motivated'",
     )
-    mood_description: str = Field(..., description="Mood description")
-    mental_state: str = Field(..., description="Overall mental state during rest")
+    mood_description: str | None = Field(None, description="Mood description")
+    mental_state: str | None = Field(None, description="Overall mental state during rest")
 
     # Optional extracted fields
     soreness_level: str | None = Field(

@@ -1,7 +1,7 @@
 """Cricket tracking Pydantic schemas."""
 
 from datetime import time
-from typing import Any, Literal
+from typing import Any
 
 from pydantic import Field
 
@@ -65,14 +65,6 @@ class CricketCoachingEntryCreate(CricketCoachingEntryBase):
     # Timing
     start_time: time | None = Field(None, description="Session start time")
     end_time: time | None = Field(None, description="Session end time")
-
-    # Data quality tracking
-    processing_duration: float | None = Field(None, ge=0.0, description="Processing duration")
-    data_quality_score: float | None = Field(None, ge=0.0, le=1.0, description="Data quality score")
-    manual_overrides: dict[str, Any] | None = Field(None, description="Manual data overrides")
-    validation_notes: str | None = Field(None, description="Validation notes")
-    energy_level: int | None = Field(None, ge=1, le=10, description="Energy level 1-10")
-    notes: str | None = Field(None, description="Additional notes")
 
 
 class CricketCoachingEntryRead(PrimaryKeyBase, TimestampBase, CricketCoachingEntryBase):
@@ -165,28 +157,3 @@ class CricketCoachingEntryResponse(AppBaseModel):
     transcript: str
     confidence_score: float
     processing_duration: float | None
-
-
-class CricketCoachingDataExtraction(AppBaseModel):
-    """Schema for structured cricket coaching data extraction from voice input."""
-
-    session_type: Literal["batting", "bowling", "fielding", "fitness", "mental"] | None = Field(
-        None,
-        description="Type of coaching session",
-    )
-    duration_minutes: int | None = Field(None, ge=5, le=480, description="Duration in minutes")
-    what_went_well: str | None = Field(None, description="What went well in the session")
-    areas_for_improvement: str | None = Field(None, description="Areas needing improvement")
-    self_assessment_score: int | None = Field(
-        None,
-        ge=1,
-        le=10,
-        description="Self-assessment score",
-    )
-    confidence_level: str | None = Field(None, description="Confidence level description")
-    focus_level: str | None = Field(None, description="Focus level description")
-    learning_satisfaction: str | None = Field(None, description="Learning satisfaction")
-    mental_state: str | None = Field(None, description="Mental state during session")
-    coach_feedback: str | None = Field(None, description="Feedback from coach")
-    skills_practiced: list[str] | None = Field(None, description="Skills practiced")
-    notes: str | None = Field(None, description="Additional notes")
