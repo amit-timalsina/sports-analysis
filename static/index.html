@@ -588,28 +588,36 @@
             addConversationTurn(questionData.turn_number, questionData.question, 'question');
             
             // Update status with question
-            updateStatus(`❓ Follow-up Question ${questionData.turn_number + 1}`, 'info');
+            updateStatus(`❓ Follow-up Question ${questionData.turn_number}`, 'info');
             
             // Show the question prominently in the UI with enhanced styling
             const statusEl = document.getElementById('status-message');
+            
+            // Format field targets for display
+            const fieldTargets = questionData.field_targets || [];
+            const fieldDisplay = fieldTargets.length > 0 
+                ? fieldTargets.map(field => field.replace('_', ' ')).join(', ')
+                : 'additional information';
+            
             statusEl.innerHTML = `
                 <div class="conversation-question">
                     <div class="question-header">
                         <span class="question-icon">🤖</span>
-                        <strong>Follow-up Question ${questionData.turn_number + 1}</strong>
+                        <strong>Follow-up Question ${questionData.turn_number}</strong>
                         <span class="progress-badge">${Math.round(questionData.completeness_score * 100)}% complete</span>
+                        <span class="question-type-badge">${questionData.is_rule_based ? 'Rule-based' : 'AI-generated'}</span>
                     </div>
                     <div class="question-text">"${questionData.question}"</div>
                     <div class="question-footer">
-                        <span class="collecting-field">Collecting: ${questionData.field_target.replace('_', ' ')}</span>
-                        <span class="instruction-text">${questionData.instructions}</span>
+                        <span class="collecting-field">Collecting: ${fieldDisplay}</span>
+                        <span class="field-count">${fieldTargets.length} field${fieldTargets.length !== 1 ? 's' : ''}</span>
                     </div>
                 </div>
             `;
             statusEl.className = 'status info conversation-status';
             
             // Show collected data so far with enhanced visualization
-            if (Object.keys(questionData.collected_data).length > 0) {
+            if (questionData.collected_data && Object.keys(questionData.collected_data).length > 0) {
                 showCollectedData(questionData.collected_data, questionData.turn_number);
             }
             
@@ -967,7 +975,7 @@
                     socket.send(JSON.stringify({
                         type: 'voice_data_meta',
                         entry_type: currentEntryType,
-                        user_id: '050c4886-de5f-43bc-a509-ac8b9567e170'
+                        user_id: 'eea15c17-fc8a-4794-b0ba-f25e22f331b4'
                     }));
                 }
 

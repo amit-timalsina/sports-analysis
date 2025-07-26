@@ -1983,4 +1983,14 @@ body {
     .detail-grid {
         grid-template-columns: 1fr;
     }
+}
+
+.question-type-badge {
+    background: var(--primary-color);
+    color: white;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    margin-left: var(--spacing-sm);
 } 

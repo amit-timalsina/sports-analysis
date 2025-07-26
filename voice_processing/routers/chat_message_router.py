@@ -98,6 +98,8 @@ async def reply_to_message(
         activity_type=conversation.activity_type,
         user_message=user_message.user_message,
         model_name=settings.openai.gpt_model,
+        turn_number=1,  # First turn
+        use_rule_based=True,  # Use rule-based by default
     )
 
     if not follow_up_question:

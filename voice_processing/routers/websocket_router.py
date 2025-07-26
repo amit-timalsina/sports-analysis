@@ -1,14 +1,13 @@
 import json
-from typing import Annotated
+from json import JSONDecodeError
+from typing import TYPE_CHECKING, Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, WebSocket
-from requests import JSONDecodeError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth.repositories.user_repository import UserRepository
 from common.config.settings import settings
-from common.repositories.crud_repository import CRUDRepository
 from database.session import get_session
 from fitness_tracking.repositories.cricket_coaching_repository import CricketCoachingEntryRepository
 from fitness_tracking.repositories.cricket_match_repository import CricketMatchEntryRepository
@@ -17,7 +16,6 @@ from fitness_tracking.repositories.rest_day_repository import RestDayEntryReposi
 from fitness_tracking.schemas.cricket_coaching import CricketCoachingEntryCreate
 from fitness_tracking.schemas.cricket_match import CricketMatchEntryCreate
 from fitness_tracking.schemas.enums.activity_type import ActivityType
-from fitness_tracking.schemas.enums.intensity_level import IntensityLevel
 from fitness_tracking.schemas.fitness import FitnessEntryCreate
 from fitness_tracking.schemas.rest_day import RestDayEntryCreate
 from logger import get_logger
@@ -30,6 +28,9 @@ from voice_processing.schemas.processing import WebSocketMessage
 from voice_processing.services.ai_service import AIService
 from voice_processing.services.openai_service import OpenAIService
 from voice_processing.websocket.manager import connection_manager
+
+if TYPE_CHECKING:
+    from common.repositories.crud_repository import CRUDRepository
 
 router = APIRouter(prefix="/api/voice_ws", tags=["voice_ws"])
 
@@ -173,7 +174,7 @@ async def handle_text_message(session_id: UUID, message: str, db: AsyncSession) 
         logger.warning("Unknown text message type: %s", message_type)
 
 
-async def handle_audio_chunk(session_id: str, audio_chunk: bytes) -> None:
+async def handle_audio_chunk(session_id: UUID, audio_chunk: bytes) -> None:
     """Accumulate audio chunks for later processing when recording is complete."""
     try:
         # Validate audio chunk
@@ -243,7 +244,6 @@ async def handle_audio_chunk(session_id: str, audio_chunk: bytes) -> None:
 
 async def handle_complete_audio_processing(session_id: UUID, db: AsyncSession) -> None:
     """Handle complete audio processing."""
-
     # Get accumulated audio and metadata
     audio_data = connection_manager.get_accumulated_audio(session_id)
     # save audio data to the file
@@ -400,7 +400,10 @@ async def handle_complete_audio_processing(session_id: UUID, db: AsyncSession) -
         is_read=True,
         is_completed=True,
     )
-    ai_message_read = await chat_message_repository.create(ai_message)
+    # once the ai message is created, we need to update it. rather than creating a new one.
+    # in a websocket, for the second iteration, we need to update the existing message.
+    # only ai_extraction is updated. We also add follow up question to it.
+    await chat_message_repository.create(ai_message)
 
     openai_client = openai_service.get_client()
     if not openai_client:
@@ -418,6 +421,8 @@ async def handle_complete_audio_processing(session_id: UUID, db: AsyncSession) -
         activity_type=conversation.activity_type,
         user_message=transcription_result.text,
         model_name=settings.openai.gpt_model,
+        turn_number=1,  # First turn
+        use_rule_based=True,  # Use rule-based by default
     )
 
     entry_type_model_factory = {
@@ -434,6 +439,17 @@ async def handle_complete_audio_processing(session_id: UUID, db: AsyncSession) -
         ActivityType.FITNESS: FitnessEntryRepository,
     }
 
+    if follow_up_question:
+        # send follow up question to user
+        follow_up_question_message = WebSocketMessage(
+            type="follow_up_question",
+            session_id=session_id,
+            data={
+                **follow_up_question.model_dump(),
+            },
+        )
+        await connection_manager.send_message(follow_up_question_message, session_id)
+
     if not follow_up_question:
         # create entry in entry type model
         entry_type_model = entry_type_model_factory[conversation.activity_type]
@@ -443,10 +459,7 @@ async def handle_complete_audio_processing(session_id: UUID, db: AsyncSession) -
             user_id=user.id,
             conversation_id=conversation.id,
             activity_type=conversation.activity_type,
-            exercise_type=extracted_data.get("fitness_type"),
-            intensity=IntensityLevel(extracted_data.get("intensity")),
-            duration_minutes=extracted_data.get("duration_minutes"),
-            # **extracted_data,
+            **extracted_data,
         )
         await entry_type_repository_instance.create(entry_type_create, current_user=user)
 
@@ -462,13 +475,3 @@ async def handle_complete_audio_processing(session_id: UUID, db: AsyncSession) -
             },
         )
         await connection_manager.send_message(completed_message, session_id)
-
-    # send follow up question to user
-    follow_up_question_message = WebSocketMessage(
-        type="follow_up_question",
-        session_id=session_id,
-        data={
-            **follow_up_question.model_dump(),
-        },
-    )
-    await connection_manager.send_message(follow_up_question_message, session_id)
