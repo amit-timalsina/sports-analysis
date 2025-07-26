@@ -45,11 +45,6 @@ class OpenAIService:
     def get_client(self) -> AsyncOpenAI | None:
         """Get OpenAI client, initializing it if needed."""
         if self._client is None:
-            # Check if we're in testing mode
-            if settings.app.is_testing:
-                # Return None for testing - functions should handle this gracefully
-                return None
-
             if not settings.openai.api_key:
                 logger.warning("OpenAI API key not configured")
                 return None

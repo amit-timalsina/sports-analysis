@@ -9,7 +9,6 @@ to log their activities using natural voice commands, with automatic transcripti
 and intelligent data extraction.
 """
 
-import logging
 from pathlib import Path
 
 from fastapi import Request
@@ -20,20 +19,9 @@ from pydantic import ValidationError
 from app_factory.factory import create_app
 from common.config.settings import settings
 from common.exceptions import AppError
+from logger import get_logger
 
-# Configure logging using settings
-logging.basicConfig(
-    level=getattr(logging, settings.app.log_level.upper()),
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    handlers=[
-        logging.StreamHandler(),
-        logging.FileHandler(settings.app.log_file)
-        if not settings.app.is_testing  # type: ignore[truthy-function]
-        else logging.StreamHandler(),
-    ],
-)
-logger = logging.getLogger(__name__)
-
+logger = get_logger(__name__)
 
 app = create_app()
 
@@ -85,6 +73,6 @@ if __name__ == "__main__":
         "main:app",
         host=settings.app.host,
         port=settings.app.port,
-        reload=settings.app.debug,
+        reload=settings.app.reload,
         log_level=settings.app.log_level.lower(),
     )

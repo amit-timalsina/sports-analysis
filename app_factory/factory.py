@@ -35,9 +35,8 @@ def create_app() -> FastAPI:
         description=settings.app.description,
         version=settings.app.version,
         lifespan=svcs.fastapi.lifespan(lifespan=lifespan, registry=dependencies_registry),
-        docs_url="/api/docs" if not settings.app.is_production else None,
-        redoc_url="/api/redoc" if not settings.app.is_production else None,
-        debug=settings.app.debug,
+        docs_url="/api/docs",
+        redoc_url="/api/redoc",
     )
 
     # Configure CORS middleware
