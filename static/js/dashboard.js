@@ -452,121 +452,10 @@ class MobileDashboard {
         `;
     }
 
-    createRecentActivityCard(item, activityIcons) {
-        const icon = activityIcons[item.type] || '📝';
-        const timeAgo = this.formatRelativeTime(new Date(item.created_at));
-        const confidence = Math.round((item.confidence_score || 0) * 100);
-        
-        // Get transcript preview (first 60 characters)
-        const getTranscriptPreview = (transcript) => {
-            if (!transcript) return 'No transcript available';
-            
-            // Handle multi-turn transcripts - extract first meaningful content
-            if (transcript.includes('Turn ') && transcript.includes('(conf:')) {
-                const turns = transcript.split('\n\n').filter(turn => turn.trim());
-                if (turns.length > 0) {
-                    const firstTurn = turns[0];
-                    const lines = firstTurn.split('\n');
-                    const contentLines = lines.slice(1); // Skip header
-                    const content = contentLines.join(' ').trim();
-                    return content.length > 60 ? content.substring(0, 60) + '...' : content;
-                }
-            }
-            
-            // Single transcript
-            return transcript.length > 60 ? transcript.substring(0, 60) + '...' : transcript;
-        };
-        
-        const transcriptPreview = getTranscriptPreview(item.transcript);
-        const transcriptTurnCount = item.transcript && item.transcript.includes('Turn ') ? 
-            (item.transcript.match(/Turn \d+/g) || []).length : 1;
-
-        // Get key metrics based on activity type
-        const getKeyMetrics = (item) => {
-            switch (item.type) {
-                case 'fitness':
-                    return [
-                        item.duration_minutes ? `${item.duration_minutes}min` : null,
-                        item.intensity ? item.intensity.charAt(0).toUpperCase() + item.intensity.slice(1) : null,
-                        item.energy_level ? `Energy: ${item.energy_level}/5` : null
-                    ].filter(Boolean);
-                
-                case 'cricket_coaching':
-                    return [
-                        item.duration_minutes ? `${item.duration_minutes}min` : null,
-                        item.confidence_level ? `Confidence: ${item.confidence_level}/10` : null,
-                        item.focus_level ? `Focus: ${item.focus_level}/10` : null
-                    ].filter(Boolean);
-                
-                case 'cricket_match':
-                case 'cricket_matches': {
-                    const m = [];
-                    if (item.runs_scored != null) m.push({ label: 'Runs', value: `${item.runs_scored}` });
-                    if (item.balls_faced != null) m.push({ label: 'Balls', value: `${item.balls_faced}` });
-                    if (item.runs_scored && item.balls_faced) {
-                        const sr = Math.round((item.runs_scored / item.balls_faced) * 100);
-                        m.push({ label: 'Strike Rate', value: `${sr}%` });
-                    }
-                    if (item.opposition_team) m.push({ label: 'Opposition', value: item.opposition_team });
-                    return m;
-                }
-                case 'rest_day':
-                case 'rest_days': {
-                    const m = [];
-                    if (item.energy_level) m.push({ label: 'Energy', value: `${item.energy_level}/10` });
-                    if (item.fatigue_level) m.push({ label: 'Fatigue', value: `${item.fatigue_level}/10` });
-                    if (item.motivation_level) m.push({ label: 'Motivation', value: `${item.motivation_level}/10` });
-                    return m;
-                }
-                default:
-                    return [];
-            }
-        };
-
-        const metrics = getKeyMetrics(item);
-        const activityTitle = this.formatActivityTitle(item);
-
-        return `
-            <div class="recent-activity-card ${item.type}" onclick="window.mobileDashboard.showActivityDetails(${JSON.stringify(item).replace(/"/g, '&quot;')})">
-                <div class="activity-card-header">
-                    <div class="activity-icon-container">
-                        <span class="activity-icon">${icon}</span>
-                    </div>
-                    <div class="activity-main-info">
-                        <div class="activity-title">${activityTitle}</div>
-                        <div class="activity-meta">
-                            <span class="activity-time">${timeAgo}</span>
-                            <span class="activity-confidence" title="Speech Recognition Confidence">${confidence}%</span>
-                            ${transcriptTurnCount > 1 ? `<span class="turn-indicator" title="Multi-turn conversation">💬 ${transcriptTurnCount} turns</span>` : ''}
-                        </div>
-                    </div>
-                </div>
-                
-                ${metrics.length > 0 ? `
-                    <div class="activity-quick-metrics">
-                        ${metrics.slice(0, 3).map(metric => `<span class="quick-metric">${metric}</span>`).join('')}
-                    </div>
-                ` : ''}
-                
-                <div class="activity-transcript-preview">
-                    <div class="transcript-preview-header">
-                        <span class="transcript-icon">🎤</span>
-                        <span class="transcript-label">What you said:</span>
-                    </div>
-                    <div class="transcript-preview-content" title="${item.transcript || 'No transcript'}">${transcriptPreview}</div>
-                </div>
-                
-                <div class="activity-card-footer">
-                    <span class="activity-id">ID: ${item.id}</span>
-                    <div class="click-indicator">
-                        <span>👆 Tap for full details</span>
-                    </div>
-                </div>
-            </div>
-        `;
-    }
+ 
 
     showActivityDetails(item) {
+        console.log('🔍 Showing details for activity:', item);
         const modal = document.getElementById('activityModal');
         const modalContent = document.getElementById('activityModalContent');
         
@@ -675,11 +564,11 @@ class MobileDashboard {
                         </div>
                         <div class="detail-item">
                             <span class="detail-label">Activity Type:</span>
-                            <span class="detail-value">${item.type}</span>
+                            <span class="detail-value">${item.activity_type || item.type}</span>
                         </div>
                         <div class="detail-item">
-                            <span class="detail-label">User ID:</span>
-                            <span class="detail-value">${item.user_id || 'demo_user'}</span>
+                            <span class="detail-label">Conversation ID:</span>
+                            <span class="detail-value">${item.conversation_id || 'N/A'}</span>
                         </div>
                         ${item.updated_at ? `
                         <div class="detail-item">
@@ -687,6 +576,15 @@ class MobileDashboard {
                             <span class="detail-value">${this.formatDateTime(item.updated_at)}</span>
                         </div>
                         ` : ''}
+                        
+                        ${this.formatTechnicalFields(item)}
+                    </div>
+                </div>
+
+                <div class="detail-section">
+                    <h4>🔍 Raw JSON Data</h4>
+                    <div class="json-container">
+                        <pre class="json-display">${JSON.stringify(item, null, 2)}</pre>
                     </div>
                 </div>
             </div>
@@ -715,6 +613,352 @@ class MobileDashboard {
             rest_day: `${item.rest_type || 'Rest'} Day`
         };
         return titles[item.type] || 'Activity';
+    }
+
+    formatTechnicalFields(item) {
+        let fieldsHtml = '';
+        
+        switch (item.type) {
+            case 'cricket_coaching':
+                // Session Structure
+                if (item.warm_up_minutes !== undefined) {
+                    fieldsHtml += `<div class="detail-item">
+                        <span class="detail-label">Warm-up Duration:</span>
+                        <span class="detail-value">${item.warm_up_minutes} minutes</span>
+                    </div>`;
+                }
+                if (item.skill_work_minutes !== undefined) {
+                    fieldsHtml += `<div class="detail-item">
+                        <span class="detail-label">Skill Work Duration:</span>
+                        <span class="detail-value">${item.skill_work_minutes} minutes</span>
+                    </div>`;
+                }
+                if (item.game_simulation_minutes !== undefined) {
+                    fieldsHtml += `<div class="detail-item">
+                        <span class="detail-label">Game Simulation:</span>
+                        <span class="detail-value">${item.game_simulation_minutes} minutes</span>
+                    </div>`;
+                }
+                if (item.cool_down_minutes !== undefined) {
+                    fieldsHtml += `<div class="detail-item">
+                        <span class="detail-label">Cool-down Duration:</span>
+                        <span class="detail-value">${item.cool_down_minutes} minutes</span>
+                    </div>`;
+                }
+                
+                // Training Details
+                if (item.primary_focus) {
+                    fieldsHtml += `<div class="detail-item">
+                        <span class="detail-label">Primary Focus:</span>
+                        <span class="detail-value">${item.primary_focus.replace(/_/g, ' ')}</span>
+                    </div>`;
+                }
+                if (item.secondary_focus) {
+                    fieldsHtml += `<div class="detail-item">
+                        <span class="detail-label">Secondary Focus:</span>
+                        <span class="detail-value">${item.secondary_focus.replace(/_/g, ' ')}</span>
+                    </div>`;
+                }
+                if (item.discipline_focus) {
+                    fieldsHtml += `<div class="detail-item">
+                        <span class="detail-label">Discipline Focus:</span>
+                        <span class="detail-value">${item.discipline_focus.replace(/_/g, ' ')}</span>
+                    </div>`;
+                }
+                
+                // Skills and Equipment
+                if (item.skills_practiced && Array.isArray(item.skills_practiced) && item.skills_practiced.length > 0) {
+                    fieldsHtml += `<div class="detail-item">
+                        <span class="detail-label">Skills Practiced:</span>
+                        <span class="detail-value">${item.skills_practiced.join(', ')}</span>
+                    </div>`;
+                }
+                if (item.equipment_used && Array.isArray(item.equipment_used) && item.equipment_used.length > 0) {
+                    fieldsHtml += `<div class="detail-item">
+                        <span class="detail-label">Equipment Used:</span>
+                        <span class="detail-value">${item.equipment_used.join(', ')}</span>
+                    </div>`;
+                }
+                
+                // Ratings and Assessment
+                if (item.technique_rating !== undefined) {
+                    fieldsHtml += `<div class="detail-item">
+                        <span class="detail-label">Technique Rating:</span>
+                        <span class="detail-value">${item.technique_rating}/10</span>
+                    </div>`;
+                }
+                if (item.effort_level !== undefined) {
+                    fieldsHtml += `<div class="detail-item">
+                        <span class="detail-label">Effort Level:</span>
+                        <span class="detail-value">${item.effort_level}/10</span>
+                    </div>`;
+                }
+                
+                // Session Goals and Achievement
+                if (item.session_goals && Array.isArray(item.session_goals) && item.session_goals.length > 0) {
+                    fieldsHtml += `<div class="detail-item">
+                        <span class="detail-label">Session Goals:</span>
+                        <span class="detail-value">${item.session_goals.join(', ')}</span>
+                    </div>`;
+                }
+                if (item.goals_achieved && Array.isArray(item.goals_achieved) && item.goals_achieved.length > 0) {
+                    fieldsHtml += `<div class="detail-item">
+                        <span class="detail-label">Goals Achieved:</span>
+                        <span class="detail-value">${item.goals_achieved.join(', ')}</span>
+                    </div>`;
+                }
+                if (item.improvement_areas && Array.isArray(item.improvement_areas) && item.improvement_areas.length > 0) {
+                    fieldsHtml += `<div class="detail-item">
+                        <span class="detail-label">Improvement Areas:</span>
+                        <span class="detail-value">${item.improvement_areas.join(', ')}</span>
+                    </div>`;
+                }
+                
+                // Coach and Facility Info
+                if (item.coach_name) {
+                    fieldsHtml += `<div class="detail-item">
+                        <span class="detail-label">Coach Name:</span>
+                        <span class="detail-value">${item.coach_name}</span>
+                    </div>`;
+                }
+                if (item.facility_name) {
+                    fieldsHtml += `<div class="detail-item">
+                        <span class="detail-label">Facility:</span>
+                        <span class="detail-value">${item.facility_name}</span>
+                    </div>`;
+                }
+                if (item.indoor_outdoor) {
+                    fieldsHtml += `<div class="detail-item">
+                        <span class="detail-label">Environment:</span>
+                        <span class="detail-value">${item.indoor_outdoor.replace(/_/g, ' ')}</span>
+                    </div>`;
+                }
+                
+                // Session Logistics
+                if (item.start_time) {
+                    fieldsHtml += `<div class="detail-item">
+                        <span class="detail-label">Start Time:</span>
+                        <span class="detail-value">${item.start_time}</span>
+                    </div>`;
+                }
+                if (item.end_time) {
+                    fieldsHtml += `<div class="detail-item">
+                        <span class="detail-label">End Time:</span>
+                        <span class="detail-value">${item.end_time}</span>
+                    </div>`;
+                }
+                if (item.group_size !== undefined) {
+                    fieldsHtml += `<div class="detail-item">
+                        <span class="detail-label">Group Size:</span>
+                        <span class="detail-value">${item.group_size} ${item.group_size === 1 ? 'person' : 'people'}</span>
+                    </div>`;
+                }
+                if (item.session_cost !== undefined && item.session_cost > 0) {
+                    fieldsHtml += `<div class="detail-item">
+                        <span class="detail-label">Session Cost:</span>
+                        <span class="detail-value">$${item.session_cost}</span>
+                    </div>`;
+                }
+                
+                // Coach Feedback and Next Steps
+                if (item.coach_feedback) {
+                    fieldsHtml += `<div class="detail-item">
+                        <span class="detail-label">Coach Feedback:</span>
+                        <span class="detail-value">${item.coach_feedback}</span>
+                    </div>`;
+                }
+                if (item.next_session_focus) {
+                    fieldsHtml += `<div class="detail-item">
+                        <span class="detail-label">Next Session Focus:</span>
+                        <span class="detail-value">${item.next_session_focus}</span>
+                    </div>`;
+                }
+                break;
+                
+            case 'fitness':
+                // Exercise Details
+                if (item.exercise_name) {
+                    fieldsHtml += `<div class="detail-item">
+                        <span class="detail-label">Exercise Name:</span>
+                        <span class="detail-value">${item.exercise_name}</span>
+                    </div>`;
+                }
+                if (item.exercise_type) {
+                    fieldsHtml += `<div class="detail-item">
+                        <span class="detail-label">Exercise Type:</span>
+                        <span class="detail-value">${item.exercise_type}</span>
+                    </div>`;
+                }
+                if (item.duration_minutes !== undefined) {
+                    fieldsHtml += `<div class="detail-item">
+                        <span class="detail-label">Duration:</span>
+                        <span class="detail-value">${item.duration_minutes} minutes</span>
+                    </div>`;
+                }
+                if (item.intensity) {
+                    fieldsHtml += `<div class="detail-item">
+                        <span class="detail-label">Intensity Level:</span>
+                        <span class="detail-value">${item.intensity}</span>
+                    </div>`;
+                }
+                
+                // Physical Metrics
+                if (item.calories_burned !== undefined && item.calories_burned !== null) {
+                    fieldsHtml += `<div class="detail-item">
+                        <span class="detail-label">Calories Burned:</span>
+                        <span class="detail-value">${item.calories_burned} cal</span>
+                    </div>`;
+                }
+                if (item.distance_km !== undefined && item.distance_km !== null) {
+                    fieldsHtml += `<div class="detail-item">
+                        <span class="detail-label">Distance:</span>
+                        <span class="detail-value">${item.distance_km} km</span>
+                    </div>`;
+                }
+                if (item.weight_kg !== undefined && item.weight_kg !== null) {
+                    fieldsHtml += `<div class="detail-item">
+                        <span class="detail-label">Weight Used:</span>
+                        <span class="detail-value">${item.weight_kg} kg</span>
+                    </div>`;
+                }
+                
+                // Sets and Reps
+                if (item.sets !== undefined && item.sets !== null) {
+                    fieldsHtml += `<div class="detail-item">
+                        <span class="detail-label">Sets:</span>
+                        <span class="detail-value">${item.sets}</span>
+                    </div>`;
+                }
+                if (item.reps !== undefined && item.reps !== null) {
+                    fieldsHtml += `<div class="detail-item">
+                        <span class="detail-label">Reps:</span>
+                        <span class="detail-value">${item.reps}</span>
+                    </div>`;
+                }
+                
+                // Heart Rate Data
+                if (item.heart_rate_avg !== undefined && item.heart_rate_avg !== null) {
+                    fieldsHtml += `<div class="detail-item">
+                        <span class="detail-label">Average Heart Rate:</span>
+                        <span class="detail-value">${item.heart_rate_avg} bpm</span>
+                    </div>`;
+                }
+                if (item.heart_rate_max !== undefined && item.heart_rate_max !== null) {
+                    fieldsHtml += `<div class="detail-item">
+                        <span class="detail-label">Max Heart Rate:</span>
+                        <span class="detail-value">${item.heart_rate_max} bpm</span>
+                    </div>`;
+                }
+                
+                // Mental and Physical State
+                if (item.mental_state) {
+                    fieldsHtml += `<div class="detail-item">
+                        <span class="detail-label">Mental State:</span>
+                        <span class="detail-value">${item.mental_state}</span>
+                    </div>`;
+                }
+                if (item.energy_level !== undefined && item.energy_level !== null) {
+                    fieldsHtml += `<div class="detail-item">
+                        <span class="detail-label">Energy Level:</span>
+                        <span class="detail-value">${item.energy_level}/10</span>
+                    </div>`;
+                }
+                if (item.workout_rating !== undefined && item.workout_rating !== null) {
+                    fieldsHtml += `<div class="detail-item">
+                        <span class="detail-label">Workout Rating:</span>
+                        <span class="detail-value">${item.workout_rating}/10</span>
+                    </div>`;
+                }
+                
+                // Location and Environment
+                if (item.location) {
+                    fieldsHtml += `<div class="detail-item">
+                        <span class="detail-label">Location:</span>
+                        <span class="detail-value">${item.location}</span>
+                    </div>`;
+                }
+                if (item.gym_name) {
+                    fieldsHtml += `<div class="detail-item">
+                        <span class="detail-label">Gym/Facility:</span>
+                        <span class="detail-value">${item.gym_name}</span>
+                    </div>`;
+                }
+                if (item.weather_conditions) {
+                    fieldsHtml += `<div class="detail-item">
+                        <span class="detail-label">Weather:</span>
+                        <span class="detail-value">${item.weather_conditions}</span>
+                    </div>`;
+                }
+                if (item.temperature !== undefined && item.temperature !== null) {
+                    fieldsHtml += `<div class="detail-item">
+                        <span class="detail-label">Temperature:</span>
+                        <span class="detail-value">${item.temperature}°C</span>
+                    </div>`;
+                }
+                
+                // Equipment and Social
+                if (item.equipment_used) {
+                    fieldsHtml += `<div class="detail-item">
+                        <span class="detail-label">Equipment Used:</span>
+                        <span class="detail-value">${item.equipment_used}</span>
+                    </div>`;
+                }
+                if (item.workout_partner) {
+                    fieldsHtml += `<div class="detail-item">
+                        <span class="detail-label">Workout Partner:</span>
+                        <span class="detail-value">${item.workout_partner}</span>
+                    </div>`;
+                }
+                if (item.trainer_name) {
+                    fieldsHtml += `<div class="detail-item">
+                        <span class="detail-label">Trainer:</span>
+                        <span class="detail-value">${item.trainer_name}</span>
+                    </div>`;
+                }
+                
+                // Timing
+                if (item.start_time) {
+                    fieldsHtml += `<div class="detail-item">
+                        <span class="detail-label">Start Time:</span>
+                        <span class="detail-value">${item.start_time}</span>
+                    </div>`;
+                }
+                if (item.end_time) {
+                    fieldsHtml += `<div class="detail-item">
+                        <span class="detail-label">End Time:</span>
+                        <span class="detail-value">${item.end_time}</span>
+                    </div>`;
+                }
+                break;
+                
+            case 'cricket_match':
+                // Add cricket match-specific technical fields
+                if (item.match_type) {
+                    fieldsHtml += `<div class="detail-item">
+                        <span class="detail-label">Match Type:</span>
+                        <span class="detail-value">${item.match_type.replace(/_/g, ' ')}</span>
+                    </div>`;
+                }
+                if (item.runs_scored !== null && item.runs_scored !== undefined) {
+                    fieldsHtml += `<div class="detail-item">
+                        <span class="detail-label">Runs Scored:</span>
+                        <span class="detail-value">${item.runs_scored}</span>
+                    </div>`;
+                }
+                break;
+                
+            case 'rest_day':
+                // Add rest day-specific technical fields
+                if (item.rest_type) {
+                    fieldsHtml += `<div class="detail-item">
+                        <span class="detail-label">Rest Type:</span>
+                        <span class="detail-value">${item.rest_type.replace(/_/g, ' ')}</span>
+                    </div>`;
+                }
+                break;
+        }
+        
+        return fieldsHtml;
     }
 
     formatDateTime(dateString) {

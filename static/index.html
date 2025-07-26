@@ -474,8 +474,7 @@
                 console.log(`📤 Sending session metadata for activity type: ${currentEntryType}`);
                 socket.send(JSON.stringify({
                     type: 'voice_data_meta',
-                    entry_type: currentEntryType,
-                    user_id: 'eea15c17-fc8a-4794-b0ba-f25e22f331b4'
+                    entry_type: currentEntryType
                 }));
             } else {
                 console.warn('⚠️ WebSocket not ready, will send metadata when recording starts');
@@ -575,7 +574,15 @@
 
         function connectWebSocket(sessionId) {
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            const wsUrl = `${protocol}//${window.location.host}/api/voice_ws/ws/${sessionId}`;
+            const token = localStorage.getItem("token");
+            
+            if (!token) {
+                console.error('❌ No authentication token found in localStorage');
+                updateStatus('❌ Authentication token missing. Please log in again.', 'error');
+                return;
+            }
+            
+            const wsUrl = `${protocol}//${window.location.host}/api/voice_ws/ws/${sessionId}?token=${encodeURIComponent(token)}`;
 
             socket = new WebSocket(wsUrl);
             
@@ -588,12 +595,19 @@
                 handleWebSocketMessage(data);
             };
             
-            socket.onclose = function() {
-                updateStatus('Connection closed', 'info');
+            socket.onclose = function(event) {
+                if (event.code === 4001) {
+                    updateStatus('❌ Authentication failed. Please check your login.', 'error');
+                    console.error('WebSocket closed due to authentication failure');
+                } else {
+                    updateStatus('Connection closed', 'info');
+                    console.log('WebSocket closed with code:', event.code, 'reason:', event.reason);
+                }
             };
             
-            socket.onerror = function() {
-                updateStatus('Connection error', 'error');
+            socket.onerror = function(error) {
+                updateStatus('❌ Connection error. Please try again.', 'error');
+                console.error('WebSocket error:', error);
             };
         }
 
@@ -1053,8 +1067,7 @@
                     console.log('📤 Ensuring backend has current session metadata before recording');
                     socket.send(JSON.stringify({
                         type: 'voice_data_meta',
-                        entry_type: currentEntryType,
-                        user_id: 'eea15c17-fc8a-4794-b0ba-f25e22f331b4'
+                        entry_type: currentEntryType
                     }));
                 }
 

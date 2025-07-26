@@ -10,15 +10,10 @@ class RestDayDataExtraction(AppBaseModel):
         None,
         description="Type of rest day. Must be exactly one of: complete_rest, active_recovery, injury_recovery. Map similar terms: full rest/total rest -> complete_rest, light activity -> active_recovery, hurt/injured -> injury_recovery.",
     )
-    sleep_hours: float | None = Field(
-        None,
-        ge=0.0,
-        description="Total hours of sleep during the rest day. Must be a positive number.",
-    )
-    sleep_quality: str | None = Field(
-        None,
-        description="Sleep quality description. Use descriptive terms like 'very poor', 'poor', 'average', 'good', 'very good'.",
-    )
+    sleep_hours: float = Field(..., ge=0.0, le=24.0, description="Hours of sleep")
+
+    sleep_quality: int = Field(..., ge=1, le=10, description="Sleep quality 1-10")
+
     planned: bool = Field(default=False, description="Whether this was a planned rest day")
     physical_state: str | None = Field(None, description="Physical state during rest")
     fatigue_level: str | None = Field(

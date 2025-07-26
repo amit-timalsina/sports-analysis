@@ -3,10 +3,14 @@ from json import JSONDecodeError
 from typing import TYPE_CHECKING, Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, WebSocket
+import svcs
+from fastapi import APIRouter, Depends, Query, WebSocket
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth.repositories.user_repository import UserRepository
+from auth.schemas.identity_provider import IdentityProvider
+from auth.schemas.user_identity import UserIdentityBase
+from auth.services.supabase import AuthSupabaseService
 from common.config.settings import settings
 from database.session import get_session
 from fitness_tracking.repositories.cricket_coaching_repository import CricketCoachingEntryRepository
@@ -41,6 +45,8 @@ async def voice_websocket_endpoint(
     websocket: WebSocket,
     session_id: UUID,
     db: Annotated[AsyncSession, Depends(get_session)],
+    # services: svcs.fastapi.DepContainer,
+    token: str = Query(..., description="Bearer token for authentication"),
 ) -> None:
     """
     Websocket endpoint which allows for real time communication between the client and server.
@@ -48,7 +54,42 @@ async def voice_websocket_endpoint(
     The client sends audio chunks to the server, and the server processes them and
     sends the response back to the client.
     """
+    # Authenticate user before accepting connection
+    try:
+        # Remove "Bearer " prefix if present
+        auth_token = token.replace("Bearer ", "") if token.startswith("Bearer ") else token
+
+        # Get the Supabase service and authenticate
+        supabase_service = AuthSupabaseService()
+        supabase_id = supabase_service.get_current_user_supabase_id(auth_token)
+
+        # Get user from database using supabase_id
+        user_repository = UserRepository(db)
+        user = await user_repository.read_by_identity(
+            UserIdentityBase(
+                provider=IdentityProvider.SUPABASE,
+                provider_user_id=supabase_id,
+            ),
+        )
+
+        logger.info("🔐 Authenticated user: %s for session %s", user.id, session_id)
+
+    except Exception:
+        logger.exception("Authentication failed for session %s", session_id)
+        await websocket.close(code=4001, reason="Authentication failed")
+        return
+
+    # Connect to WebSocket first
     await connection_manager.connect(websocket, session_id)
+
+    # Then store authenticated user info in session metadata
+    connection_manager.set_session_metadata(
+        session_id,
+        {
+            "user_id": user.id,
+            "authenticated": True,
+        },
+    )
 
     # Send welcome message with settings-based configuration
     welcome_message = WebSocketMessage(
@@ -105,7 +146,6 @@ async def handle_text_message(session_id: UUID, message: str, db: AsyncSession) 
 
     if message_type == "voice_data_meta":
         entry_type = message_data.get("entry_type")
-        user_id = message_data.get("user_id")
 
         # Validate entry type
         valid_entry_types = ["fitness", "cricket_coaching", "cricket_match", "rest_day"]
@@ -119,36 +159,27 @@ async def handle_text_message(session_id: UUID, message: str, db: AsyncSession) 
             await connection_manager.send_message(error_message, session_id)
             return
 
-        # Validate user_id is provided and is a valid UUID
-        if not user_id:
+        # Get user_id from session metadata (set during authentication)
+        session_metadata = connection_manager.get_session_metadata(session_id)
+        if not session_metadata or not session_metadata.get("authenticated"):
             error_message = WebSocketMessage(
                 type="error",
                 session_id=session_id,
-                error="missing_user_id",
-                message="user_id is required in voice_data_meta message",
+                error="not_authenticated",
+                message="Session not authenticated",
             )
             await connection_manager.send_message(error_message, session_id)
             return
 
-        try:
-            # Validate that user_id is a valid UUID
-            UUID(str(user_id))
-        except ValueError:
-            error_message = WebSocketMessage(
-                type="error",
-                session_id=session_id,
-                error="invalid_user_id",
-                message="user_id must be a valid UUID format",
-            )
-            await connection_manager.send_message(error_message, session_id)
-            return
+        user_id = session_metadata.get("user_id")
 
-        # Store session metadata
+        # Update session metadata with entry type
         connection_manager.set_session_metadata(
             session_id,
             {
                 "entry_type": entry_type,
-                "user_id": UUID(str(user_id)),
+                "user_id": user_id,
+                "authenticated": True,
             },
         )
 
@@ -158,7 +189,7 @@ async def handle_text_message(session_id: UUID, message: str, db: AsyncSession) 
             session_id=session_id,
             data={
                 "entry_type": entry_type,
-                "user_id": user_id,
+                "user_id": str(user_id),
                 "ready_for_audio": True,
             },
         )
@@ -303,7 +334,7 @@ async def handle_complete_audio_processing(session_id: UUID, db: AsyncSession) -
         data={
             "audio_size": len(audio_data),
             "entry_type": entry_type,
-            "user_id": user_id,
+            "user_id": str(user_id),
             "stage": "transcription",
         },
     )
@@ -365,7 +396,7 @@ async def handle_complete_audio_processing(session_id: UUID, db: AsyncSession) -
             # "duration": transcription_result.
             "audio_size": len(audio_data),
             "entry_type": entry_type,
-            "user_id": user_id,
+            "user_id": str(user_id),
         },
     )
     await connection_manager.send_message(transcription_message, session_id)
@@ -475,10 +506,10 @@ async def handle_complete_audio_processing(session_id: UUID, db: AsyncSession) -
             type="conversation_completed",
             session_id=session_id,
             data={
-                "conversation_id": session_id,
-                "activity_type": activity_type,
+                "conversation_id": str(session_id),
+                "activity_type": activity_type.value,
                 "entry_type": entry_type,
-                "user_id": user_id,
+                "user_id": str(user_id),
                 "entry_data": entry_type_create.model_dump(),
             },
         )
