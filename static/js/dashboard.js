@@ -21,8 +21,14 @@ class MobileDashboard {
     async init() {
         console.log('🏏 Initializing Cricket Fitness Tracker Dashboard');
         
+        // Setup global error handlers for Chart.js
+        this.setupGlobalChartErrorHandlers();
+        
         // Setup event listeners
         this.setupEventListeners();
+        
+        // Setup analytics tab listeners if they exist
+        this.setupAnalyticsTabListeners();
         
         // Load initial data
         await this.loadDashboardData();
@@ -31,6 +37,41 @@ class MobileDashboard {
         this.setupPeriodicRefresh();
         
         console.log('✅ Dashboard initialized successfully');
+    }
+
+    /**
+     * Setup global error handlers to catch Chart.js animation errors
+     */
+    setupGlobalChartErrorHandlers() {
+        // Catch any uncaught Chart.js errors
+        const originalRequestAnimationFrame = window.requestAnimationFrame;
+        window.requestAnimationFrame = function(callback) {
+            return originalRequestAnimationFrame(function(timestamp) {
+                try {
+                    callback(timestamp);
+                } catch (error) {
+                    if (error.message && error.message.includes('_fn is not a function')) {
+                        console.warn('Chart.js animation error caught and suppressed:', error);
+                        return;
+                    }
+                    throw error;
+                }
+            });
+        };
+        
+        // Listen for global errors and suppress Chart.js animation errors
+        window.addEventListener('error', function(event) {
+            if (event.error && event.error.message && 
+                (event.error.message.includes('_fn is not a function') ||
+                 event.error.message.includes('core.animation.js') ||
+                 event.error.message.includes('core.animator.js'))) {
+                console.warn('Chart.js animation error suppressed:', event.error);
+                event.preventDefault();
+                return false;
+            }
+        });
+        
+        console.log('✅ Global Chart.js error handlers setup');
     }
 
     setupEventListeners() {
@@ -58,6 +99,64 @@ class MobileDashboard {
 
         // Pull to refresh (mobile)
         this.setupPullToRefresh();
+    }
+
+    setupAnalyticsTabListeners() {
+        // Listen for analytics sub-tab changes
+        document.addEventListener('click', (e) => {
+            if (e.target.classList.contains('analytics-nav-btn') || 
+                e.target.closest('.analytics-nav-btn')) {
+                
+                const btn = e.target.classList.contains('analytics-nav-btn') ? 
+                           e.target : e.target.closest('.analytics-nav-btn');
+                
+                if (btn && btn.dataset.analytics) {
+                    this.switchAnalyticsTab(btn.dataset.analytics);
+                }
+            }
+        });
+    }
+
+    async switchAnalyticsTab(analyticsType) {
+        try {
+            console.log(`🔄 Switching to ${analyticsType} analytics...`);
+            
+            // Clean up existing charts first
+            this.cleanupChartsOnTabSwitch();
+            
+            // Update active state for analytics nav
+            document.querySelectorAll('.analytics-nav-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            
+            const targetBtn = document.querySelector(`[data-analytics="${analyticsType}"]`);
+            if (targetBtn) {
+                targetBtn.classList.add('active');
+            }
+            
+            // Wait for cleanup to complete
+            await new Promise(resolve => setTimeout(resolve, 250));
+            
+            // Load new analytics
+            if (window.analyticsCharts) {
+                switch (analyticsType) {
+                    case 'fitness':
+                        await window.analyticsCharts.renderFitnessAnalytics();
+                        break;
+                    case 'cricket':
+                        await window.analyticsCharts.renderCricketAnalytics();
+                        break;
+                    case 'combined':
+                        await window.analyticsCharts.renderCombinedAnalytics();
+                        break;
+                    default:
+                        console.warn(`Unknown analytics type: ${analyticsType}`);
+                }
+            }
+            
+        } catch (error) {
+            console.error(`❌ Failed to switch to ${analyticsType} analytics:`, error);
+        }
     }
 
     async loadDashboardData() {
@@ -207,7 +306,7 @@ class MobileDashboard {
                 </div>
             `;
         }).join('');
-    }
+    }matches
 
     renderQuickStats(data) {
         const quickStats = document.getElementById('quick-stats');
@@ -860,6 +959,9 @@ class MobileDashboard {
     }
 
     switchTab(tabName) {
+        // First, destroy any existing charts to prevent animation errors
+        this.cleanupChartsOnTabSwitch();
+        
         // Remove active class from all tabs
         document.querySelectorAll('.nav-tab').forEach(tab => {
             tab.classList.remove('active');
@@ -875,19 +977,106 @@ class MobileDashboard {
         this.showTabContent(tabName);
     }
 
-    showTabContent(tabName) {
+    /**
+     * Clean up Chart.js instances when switching tabs to prevent animation errors
+     */
+    cleanupChartsOnTabSwitch() {
+        try {
+            console.log('🧹 Starting comprehensive chart cleanup...');
+            
+            // Stop all Chart.js animations globally first
+            if (window.Chart) {
+                // Stop all active animators
+                if (window.Chart.animationService) {
+                    window.Chart.animationService._animations.forEach(animation => {
+                        try {
+                            animation.stop();
+                        } catch (e) {
+                            console.warn('Error stopping animation:', e);
+                        }
+                    });
+                    window.Chart.animationService._animations.clear();
+                }
+                
+                // Clean up Chart.js instances registry
+                if (window.Chart.instances) {
+                    Object.keys(window.Chart.instances).forEach(id => {
+                        const chartInstance = window.Chart.instances[id];
+                        if (chartInstance) {
+                            try {
+                                // Force stop all animations
+                                if (chartInstance.animator) {
+                                    chartInstance.animator.stop();
+                                    if (chartInstance.animator._animations) {
+                                        chartInstance.animator._animations.clear();
+                                    }
+                                }
+                                // Cancel any animation frames
+                                if (chartInstance._animationFrame) {
+                                    cancelAnimationFrame(chartInstance._animationFrame);
+                                }
+                                // Disable animations completely
+                                if (chartInstance.options && chartInstance.options.animation) {
+                                    chartInstance.options.animation.duration = 0;
+                                }
+                                chartInstance.stop();
+                                chartInstance.destroy();
+                            } catch (error) {
+                                console.warn(`Error destroying chart ${id}:`, error);
+                            }
+                        }
+                    });
+                    // Clear the instances registry
+                    window.Chart.instances = {};
+                }
+            }
+            
+            // If analytics charts exist, destroy them
+            if (window.analyticsCharts && typeof window.analyticsCharts.destroyAllCharts === 'function') {
+                window.analyticsCharts.destroyAllCharts();
+            }
+            
+            // Clear any canvas elements that might have lingering contexts
+            const canvases = document.querySelectorAll('canvas');
+            canvases.forEach(canvas => {
+                const ctx = canvas.getContext('2d');
+                if (ctx) {
+                    try {
+                        ctx.clearRect(0, 0, canvas.width, canvas.height);
+                        // Reset canvas dimensions to force context cleanup
+                        canvas.width = 1;
+                        canvas.height = 1;
+                    } catch (error) {
+                        console.warn('Error clearing canvas:', error);
+                    }
+                }
+            });
+            
+            console.log('✅ Chart cleanup complete');
+            
+        } catch (error) {
+            console.warn('Error during chart cleanup:', error);
+        }
+    }
+
+    async showTabContent(tabName) {
         // Hide all tab content
         document.querySelectorAll('.tab-content').forEach(content => {
             content.classList.add('hidden');
         });
+
+        // Wait a brief moment for cleanup to complete
+        await new Promise(resolve => setTimeout(resolve, 100));
 
         // Show selected content
         const activeContent = document.getElementById(`${tabName}-tab`);
         if (activeContent) {
             activeContent.classList.remove('hidden');
             
-            // Load tab-specific data
-            this.loadTabData(tabName);
+            // Load tab-specific data with a slight delay
+            setTimeout(() => {
+                this.loadTabData(tabName);
+            }, 150);
         }
     }
 
@@ -906,9 +1095,43 @@ class MobileDashboard {
     }
 
     async loadAnalyticsData() {
-        // Implementation for analytics loading
-        console.log('📊 Loading analytics data...');
-        // This will be enhanced with chart visualization
+        try {
+            console.log('📊 Loading analytics data...');
+            
+            // Ensure charts are clean before loading
+            if (window.analyticsCharts && typeof window.analyticsCharts.clearAnalyticsSection === 'function') {
+                window.analyticsCharts.clearAnalyticsSection();
+            }
+            
+            // Wait for DOM to be ready
+            await new Promise(resolve => setTimeout(resolve, 200));
+            
+            // Determine which analytics to load based on current selection
+            const activeAnalyticsTab = document.querySelector('.analytics-nav .active');
+            const analyticsType = activeAnalyticsTab ? activeAnalyticsTab.dataset.analytics : 'fitness';
+            
+            // Load appropriate analytics
+            if (window.analyticsCharts) {
+                switch (analyticsType) {
+                    case 'fitness':
+                        await window.analyticsCharts.renderFitnessAnalytics();
+                        break;
+                    case 'cricket':
+                        await window.analyticsCharts.renderCricketAnalytics();
+                        break;
+                    case 'combined':
+                        await window.analyticsCharts.renderCombinedAnalytics();
+                        break;
+                    default:
+                        await window.analyticsCharts.renderFitnessAnalytics();
+                }
+            } else {
+                console.warn('Analytics charts not available yet');
+            }
+            
+        } catch (error) {
+            console.error('❌ Failed to load analytics:', error);
+        }
     }
 
     async loadEntriesData() {
