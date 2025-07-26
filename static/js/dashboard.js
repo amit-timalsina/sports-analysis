@@ -245,9 +245,8 @@ class MobileDashboard {
             d.activity_summary = {
                 fitness_sessions: d.this_week.fitness_sessions || 0,
                 cricket_coaching_sessions: d.this_week.coaching_sessions || 0,
-                matches_played: d.this_week.matches_played || 0,
-                rest_days: d.this_week.rest_days || 0,
-                average_energy_level: d.this_week.average_energy_level || 0,
+                cricket_match_sessions: d.this_week.cricket_match_sessions || 0,
+                rest_day_sessions: d.this_week.rest_day_sessions || 0,
             };
         }
 
@@ -268,8 +267,8 @@ class MobileDashboard {
             d.recent_entries = {
                 fitness: normalizeEntries(d.recent_activities.fitness, 'fitness'),
                 cricket_coaching: normalizeEntries(d.recent_activities.coaching, 'cricket_coaching'),
-                cricket_matches: normalizeEntries(d.recent_activities.matches, 'cricket_match'),
-                rest_days: normalizeEntries(d.recent_activities.rest_days, 'rest_day'),
+                cricket_match: normalizeEntries(d.recent_activities.cricket_match, 'cricket_match'),
+                rest_day: normalizeEntries(d.recent_activities.rest_day, 'rest_day'),
             };
         }
 
@@ -306,14 +305,14 @@ class MobileDashboard {
                 icon: '🏆',
                 title: 'Match',
                 description: 'Game performance',
-                apiKey: 'cricket_matches'
+                apiKey: 'cricket_match'
             },
             {
                 type: 'rest_day',
                 icon: '😴',
                 title: 'Rest Day',
                 description: 'Recovery tracking',
-                apiKey: 'rest_days'
+                apiKey: 'rest_day'
             }
         ];
 
@@ -385,6 +384,8 @@ class MobileDashboard {
         // Fitness progress
         const fitnessProgress = (activitySummary.fitness_sessions || 0) / 7 * 100;
         const cricketProgress = (activitySummary.cricket_coaching_sessions || 0) / 5 * 100;
+        const cricketMatchProgress = (activitySummary.cricket_match_sessions || 0) / 5 * 100;
+        const restDayProgress = (activitySummary.rest_day_sessions || 0) / 5 * 100;
 
         progressSection.innerHTML = `
             <h3>📈 This Week's Progress</h3>
@@ -402,10 +403,30 @@ class MobileDashboard {
             <div class="progress-item">
                 <div class="progress-text">
                     <span>Cricket Practice</span>
-                    <span>${activitySummary.cricket_coaching_sessions || 0}/5 sessions</span>
+                    <span>${activitySummary.cricket_coaching_sessions || 0}/7 sessions</span>
                 </div>
                 <div class="progress-bar">
                     <div class="progress-fill" style="width: ${Math.min(cricketProgress, 100)}%"></div>
+                </div>
+            </div>
+
+            <div class="progress-item">
+                <div class="progress-text">
+                    <span>Cricket Match</span>
+                    <span>${activitySummary.cricket_match_sessions || 0}/7 sessions</span>
+                </div>
+                <div class="progress-bar">
+                    <div class="progress-fill" style="width: ${Math.min(cricketMatchProgress, 100)}%"></div>
+                </div>
+            </div>
+
+            <div class="progress-item">
+                <div class="progress-text">
+                    <span>Rest Day</span>
+                    <span>${activitySummary.rest_day_sessions || 0}/7 sessions</span>
+                </div>
+                <div class="progress-bar">
+                    <div class="progress-fill" style="width: ${Math.min(restDayProgress, 100)}%"></div>
                 </div>
             </div>
         `;
@@ -987,73 +1008,10 @@ class MobileDashboard {
         try {
             console.log('🧹 Starting comprehensive chart cleanup...');
             
-            // Stop all Chart.js animations globally first
-            if (window.Chart) {
-                // Stop all active animators
-                if (window.Chart.animationService) {
-                    window.Chart.animationService._animations.forEach(animation => {
-                        try {
-                            animation.stop();
-                        } catch (e) {
-                            console.warn('Error stopping animation:', e);
-                        }
-                    });
-                    window.Chart.animationService._animations.clear();
-                }
-                
-                // Clean up Chart.js instances registry
-                if (window.Chart.instances) {
-                    Object.keys(window.Chart.instances).forEach(id => {
-                        const chartInstance = window.Chart.instances[id];
-                        if (chartInstance) {
-                            try {
-                                // Force stop all animations
-                                if (chartInstance.animator) {
-                                    chartInstance.animator.stop();
-                                    if (chartInstance.animator._animations) {
-                                        chartInstance.animator._animations.clear();
-                                    }
-                                }
-                                // Cancel any animation frames
-                                if (chartInstance._animationFrame) {
-                                    cancelAnimationFrame(chartInstance._animationFrame);
-                                }
-                                // Disable animations completely
-                                if (chartInstance.options && chartInstance.options.animation) {
-                                    chartInstance.options.animation.duration = 0;
-                                }
-                                chartInstance.stop();
-                                chartInstance.destroy();
-                            } catch (error) {
-                                console.warn(`Error destroying chart ${id}:`, error);
-                            }
-                        }
-                    });
-                    // Clear the instances registry
-                    window.Chart.instances = {};
-                }
-            }
-            
-            // If analytics charts exist, destroy them
+            // Use the new chart system's cleanup method
             if (window.analyticsCharts && typeof window.analyticsCharts.destroyAllCharts === 'function') {
                 window.analyticsCharts.destroyAllCharts();
             }
-            
-            // Clear any canvas elements that might have lingering contexts
-            const canvases = document.querySelectorAll('canvas');
-            canvases.forEach(canvas => {
-                const ctx = canvas.getContext('2d');
-                if (ctx) {
-                    try {
-                        ctx.clearRect(0, 0, canvas.width, canvas.height);
-                        // Reset canvas dimensions to force context cleanup
-                        canvas.width = 1;
-                        canvas.height = 1;
-                    } catch (error) {
-                        console.warn('Error clearing canvas:', error);
-                    }
-                }
-            });
             
             console.log('✅ Chart cleanup complete');
             

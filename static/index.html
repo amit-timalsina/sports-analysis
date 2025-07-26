@@ -9,6 +9,7 @@
     
     <!-- PWA Meta Tags -->
     <link rel="manifest" href="/static/manifest.json">
+    <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <meta name="apple-mobile-web-app-title" content="Cricket Tracker">
@@ -1133,16 +1134,28 @@
 
         // Analytics Chart Functions
         function showChartsLoading() {
-            const loadingEl = document.getElementById('charts-loading');
-            if (loadingEl) {
-                loadingEl.classList.remove('hidden');
+            // Use the chart class loading indicator if available
+            if (window.analyticsCharts && typeof window.analyticsCharts.showLoadingIndicator === 'function') {
+                window.analyticsCharts.showLoadingIndicator();
+            } else {
+                // Fallback to global loading indicator
+                const loadingEl = document.getElementById('charts-loading');
+                if (loadingEl) {
+                    loadingEl.classList.remove('hidden');
+                }
             }
         }
         
         function hideChartsLoading() {
-            const loadingEl = document.getElementById('charts-loading');
-            if (loadingEl) {
-                loadingEl.classList.add('hidden');
+            // Use the chart class loading indicator if available
+            if (window.analyticsCharts && typeof window.analyticsCharts.hideLoadingIndicator === 'function') {
+                window.analyticsCharts.hideLoadingIndicator();
+            } else {
+                // Fallback to global loading indicator
+                const loadingEl = document.getElementById('charts-loading');
+                if (loadingEl) {
+                    loadingEl.classList.add('hidden');
+                }
             }
         }
 
@@ -1187,7 +1200,6 @@
             
             btn.innerHTML = '<span class="loading"></span> Loading...';
             btn.disabled = true;
-            showChartsLoading();
             
             try {
                 if (window.analyticsCharts) {
@@ -1196,7 +1208,6 @@
             } catch (error) {
                 console.error('Failed to load fitness charts:', error);
             } finally {
-                hideChartsLoading();
                 btn.innerHTML = originalText;
                 btn.disabled = false;
             }
@@ -1208,7 +1219,6 @@
             
             btn.innerHTML = '<span class="loading"></span> Loading...';
             btn.disabled = true;
-            showChartsLoading();
             
             try {
                 if (window.analyticsCharts) {
@@ -1217,7 +1227,6 @@
             } catch (error) {
                 console.error('Failed to load cricket charts:', error);
             } finally {
-                hideChartsLoading();
                 btn.innerHTML = originalText;
                 btn.disabled = false;
             }
@@ -1229,7 +1238,6 @@
             
             btn.innerHTML = '<span class="loading"></span> Loading...';
             btn.disabled = true;
-            showChartsLoading();
             
             try {
                 if (window.analyticsCharts) {
@@ -1238,7 +1246,6 @@
             } catch (error) {
                 console.error('Failed to load combined charts:', error);
             } finally {
-                hideChartsLoading();
                 btn.innerHTML = originalText;
                 btn.disabled = false;
             }
@@ -1306,15 +1313,12 @@
         
         // Auto-load fitness charts when analytics tab opens
         async function loadFitnessChartsAuto() {
-            showChartsLoading();
             try {
                 if (window.analyticsCharts) {
                     await window.analyticsCharts.renderFitnessAnalytics();
                 }
             } catch (error) {
                 console.error('Failed to auto-load fitness charts:', error);
-            } finally {
-                hideChartsLoading();
             }
         }
 

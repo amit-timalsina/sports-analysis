@@ -1,5 +1,6 @@
 from collections.abc import AsyncGenerator
 from datetime import datetime
+from typing import Any
 
 import svcs
 from sqlalchemy import func, select
@@ -92,6 +93,68 @@ class RestDayEntryRepository(
             "planned": planned_count,
             "unplanned": unplanned_count,
             "total": planned_count + unplanned_count,
+        }
+
+    async def get_rest_stats(
+        self,
+        current_user: User | None = None,
+        start_date: datetime | None = None,
+        end_date: datetime | None = None,
+    ) -> dict[str, Any]:
+        """Get rest day statistics."""
+        session = await self.get_session()
+
+        filter_condition = self.user_filter(current_user)
+        if start_date:
+            filter_condition &= RestDayEntry.activity_timestamp >= start_date
+        if end_date:
+            filter_condition &= RestDayEntry.activity_timestamp <= end_date
+
+        # Get aggregated stats
+        stats_result = await session.execute(
+            select(
+                func.count(RestDayEntry.id).label("total_rest_days"),
+                func.avg(RestDayEntry.sleep_hours).label("avg_sleep_hours"),
+                func.avg(RestDayEntry.sleep_quality).label("avg_sleep_quality"),
+                func.avg(RestDayEntry.recovery_score).label("avg_recovery_score"),
+                func.avg(RestDayEntry.readiness_for_next_workout).label("avg_readiness"),
+            ).filter(filter_condition),
+        )
+
+        stats = stats_result.first()
+
+        # Get rest type distribution
+        rest_type_query = await session.execute(
+            select(RestDayEntry.rest_type, func.count(RestDayEntry.id))
+            .filter(filter_condition)
+            .group_by(RestDayEntry.rest_type),
+        )
+
+        rest_type_breakdown = {rest_type: count for rest_type, count in rest_type_query.all()}
+
+        # Get planned vs unplanned breakdown
+        planned_query = await session.execute(
+            select(RestDayEntry.planned, func.count(RestDayEntry.id))
+            .filter(filter_condition)
+            .group_by(RestDayEntry.planned),
+        )
+
+        planned_breakdown = {str(planned): count for planned, count in planned_query.all()}
+
+        return {
+            "total_rest_days": stats.total_rest_days if stats else 0,
+            "average_sleep_hours": float(
+                stats.avg_sleep_hours if stats and stats.avg_sleep_hours else 0
+            ),
+            "average_sleep_quality": float(
+                stats.avg_sleep_quality if stats and stats.avg_sleep_quality else 0
+            ),
+            "average_recovery_score": float(
+                stats.avg_recovery_score if stats and stats.avg_recovery_score else 0
+            ),
+            "average_readiness": float(stats.avg_readiness if stats and stats.avg_readiness else 0),
+            "rest_type_breakdown": rest_type_breakdown,
+            "planned_breakdown": planned_breakdown,
         }
 
     @classmethod
