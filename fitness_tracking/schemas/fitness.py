@@ -1,6 +1,7 @@
 """Fitness activity Pydantic schemas for API contracts."""
 
 from datetime import time
+from uuid import UUID
 
 from pydantic import Field, model_validator
 
@@ -108,3 +109,13 @@ class FitnessEntryUpdate(AppBaseModel):
 
 class FitnessEntryRead(PrimaryKeyBase, TimestampBase, FitnessEntryCreate):
     """Schema for reading fitness entry data."""
+
+
+class FitnessEntryResponse(AppBaseModel):
+    """Schema for fitness entry API responses with transcription data."""
+
+    entries: list[FitnessEntryRead]
+    count: int
+    user_id: UUID
+    days_back: int | None = None
+    transcriptions: list[list[str]] | None = None

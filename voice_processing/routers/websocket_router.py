@@ -19,11 +19,10 @@ from fitness_tracking.schemas.enums.activity_type import ActivityType
 from fitness_tracking.schemas.fitness import FitnessEntryCreate
 from fitness_tracking.schemas.rest_day import RestDayEntryCreate
 from logger import get_logger
+from voice_processing.models.chat_message import ChatMessage
 from voice_processing.repositories.chat_message_repository import ChatMessageRepository
-from voice_processing.repositories.conversation_repository import ConversationRepository
 from voice_processing.schemas.chat_message import ChatMessageBase
 from voice_processing.schemas.chat_message_sender import ChatMessageSender
-from voice_processing.schemas.conversation import ConversationCreate
 from voice_processing.schemas.processing import WebSocketMessage
 from voice_processing.services.ai_service import AIService
 from voice_processing.services.openai_service import OpenAIService
@@ -80,14 +79,16 @@ async def voice_websocket_endpoint(
 
     while True:
         data = await websocket.receive()
-
+        logger.info("Received data: %s", data)
         if data.get("type") == "websocket.disconnect":
             break
 
         if "text" in data:
+            logger.info("Handled text message")
             await handle_text_message(session_id, data["text"], db)
 
         elif "bytes" in data:
+            logger.info("Handled audio chunk")
             await handle_audio_chunk(session_id, data["bytes"])
 
     connection_manager.disconnect(session_id)
@@ -95,8 +96,6 @@ async def voice_websocket_endpoint(
 
 async def handle_text_message(session_id: UUID, message: str, db: AsyncSession) -> None:
     """Handle text messages from WebSocket clients."""
-    logger.debug("Received text message: %s", message)
-    logger.debug("Session ID: %s", session_id)
     try:
         message_data = json.loads(message)
         message_type = message_data.get("type")
@@ -246,6 +245,7 @@ async def handle_complete_audio_processing(session_id: UUID, db: AsyncSession) -
     """Handle complete audio processing."""
     # Get accumulated audio and metadata
     audio_data = connection_manager.get_accumulated_audio(session_id)
+    connection_manager.clear_audio_buffer(session_id)
     # save audio data to the file
 
     session_metadata = connection_manager.get_session_metadata(session_id)
@@ -324,8 +324,6 @@ async def handle_complete_audio_processing(session_id: UUID, db: AsyncSession) -
         await connection_manager.send_message(error_message, session_id)
         return
 
-    conversation_respository = ConversationRepository(db)
-
     # Map entry_type string to ActivityType enum
     entry_type_mapping = {
         "fitness": ActivityType.FITNESS,
@@ -345,18 +343,11 @@ async def handle_complete_audio_processing(session_id: UUID, db: AsyncSession) -
         await connection_manager.send_message(error_message, session_id)
         return
 
-    conversation = await conversation_respository.create(
-        ConversationCreate(
-            activity_type=activity_type,
-        ),
-        current_user=user,
-    )
-
     # save transcript to conversation
     chat_message_repository = ChatMessageRepository(db)
     await chat_message_repository.create(
         ChatMessageBase(
-            conversation_id=conversation.id,
+            conversation_id=session_id,
             user_message=transcription_result.text,
             sender=ChatMessageSender.USER,
             is_read=True,
@@ -381,19 +372,35 @@ async def handle_complete_audio_processing(session_id: UUID, db: AsyncSession) -
 
     # Process with conversation service
     logger.info("Starting conversation processing for session %s", session_id)
+    # fetch past messages from conversation
+    past_user_messages = await chat_message_repository.read_multi_by_filter(
+        filter_condition=(
+            (ChatMessage.conversation_id == session_id)
+            & (ChatMessage.sender == ChatMessageSender.USER)
+            & (ChatMessage.user_message.is_not(None))
+        ),
+        limit=100,
+    )
+
+    past_messages_text = "\n".join([msg.user_message for msg in past_user_messages])
+    logger.info("past_messages_text: %s", past_messages_text)
+
+    # update past messages with new message
+    complete_transcription_text = f"{past_messages_text}\n{transcription_result.text}"
+
     activity_type_to_extraction_method = {
         ActivityType.CRICKET_MATCH: openai_service.extract_cricket_match_data,
         ActivityType.CRICKET_COACHING: openai_service.extract_cricket_coaching_data,
         ActivityType.REST_DAY: openai_service.extract_rest_day_data,
         ActivityType.FITNESS: openai_service.extract_fitness_data,
     }
-    extraction_method = activity_type_to_extraction_method[conversation.activity_type]
-    extracted_data = await extraction_method(transcription_result.text)
+    extraction_method = activity_type_to_extraction_method[activity_type]
+    extracted_data = await extraction_method(complete_transcription_text)
     logger.info("extracted_data: %s", extracted_data)
 
     # create ai
     ai_message = ChatMessageBase(
-        conversation_id=conversation.id,
+        conversation_id=session_id,
         sender=ChatMessageSender.AI,
         user_message=None,
         ai_extraction=extracted_data,
@@ -418,7 +425,7 @@ async def handle_complete_audio_processing(session_id: UUID, db: AsyncSession) -
     ai_service = AIService(openai_client)
     follow_up_question = await ai_service.generate_follow_up_question(
         collected_data=extracted_data,
-        activity_type=conversation.activity_type,
+        activity_type=activity_type,
         user_message=transcription_result.text,
         model_name=settings.openai.gpt_model,
         turn_number=1,  # First turn
@@ -452,13 +459,13 @@ async def handle_complete_audio_processing(session_id: UUID, db: AsyncSession) -
 
     if not follow_up_question:
         # create entry in entry type model
-        entry_type_model = entry_type_model_factory[conversation.activity_type]
-        entry_type_repository = entry_type_repository_factory[conversation.activity_type]
+        entry_type_model = entry_type_model_factory[activity_type]
+        entry_type_repository = entry_type_repository_factory[activity_type]
         entry_type_repository_instance = entry_type_repository(db)
         entry_type_create = entry_type_model(
             user_id=user.id,
-            conversation_id=conversation.id,
-            activity_type=conversation.activity_type,
+            conversation_id=session_id,
+            activity_type=activity_type,
             **extracted_data,
         )
         await entry_type_repository_instance.create(entry_type_create, current_user=user)
@@ -468,7 +475,8 @@ async def handle_complete_audio_processing(session_id: UUID, db: AsyncSession) -
             type="conversation_completed",
             session_id=session_id,
             data={
-                **conversation.model_dump(),
+                "conversation_id": session_id,
+                "activity_type": activity_type,
                 "entry_type": entry_type,
                 "user_id": user_id,
                 "entry_data": entry_type_create.model_dump(),

@@ -1,16 +1,15 @@
 """Schema for structured cricket match data extraction from voice input using LLM."""
 
-from typing import Literal
-
 from pydantic import Field
 
 from common.schemas import AppBaseModel
+from fitness_tracking.schemas.enums.match_format import MatchFormat
 
 
 class CricketMatchDataExtraction(AppBaseModel):
     """Schema for structured cricket match data extraction from voice input."""
 
-    match_format: Literal["tournament", "practice", "friendly"] | None = Field(
+    match_format: MatchFormat | None = Field(
         None,
         description="Type of match",
     )

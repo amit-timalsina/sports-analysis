@@ -1,4 +1,4 @@
-from typing import Any
+from uuid import UUID
 
 from pydantic import Field
 
@@ -69,9 +69,6 @@ class RestDayEntryUpdate(AppBaseModel):
     hydration_liters: float | None = Field(None, ge=0.0)
     protein_focus: bool | None = None
     nutrition_notes: str | None = None
-    data_quality_score: float | None = Field(None, ge=0.0, le=1.0)
-    manual_overrides: dict[str, Any] | None = None
-    validation_notes: str | None = None
     energy_level: int | None = Field(None, ge=1, le=10)
     notes: str | None = None
 
@@ -93,9 +90,15 @@ class RestDayEntryRead(PrimaryKeyBase, TimestampBase, RestDayEntryBase):
     hydration_liters: float | None
     protein_focus: bool | None
     nutrition_notes: str | None
-    # processing_duration: float | None
-    # data_quality_score: float | None
-    # manual_overrides: dict[str, Any] | None
-    # validation_notes: str | None
+
     energy_level: int | None
     notes: str | None
+
+
+class RestDayEntryResponse(AppBaseModel):
+    """Schema for rest day entry API responses with transcription data."""
+
+    entries: list[RestDayEntryRead]
+    count: int
+    user_id: UUID
+    transcriptions: list[list[str]] | None = None

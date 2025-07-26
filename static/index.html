@@ -73,15 +73,7 @@
                     <!-- Stats will be populated by JavaScript -->
                     <div class="stat-item">
                         <span class="stat-value">-</span>
-                        <div class="stat-label">Fitness sessions</div>
-                    </div>
-                    <div class="stat-item">
-                        <span class="stat-value">-</span>
-                        <div class="stat-label">Cricket sessions</div>
-                    </div>
-                    <div class="stat-item">
-                        <span class="stat-value">-</span>
-                        <div class="stat-label">Energy level</div>
+                        <div class="stat-label">This period</div>
                     </div>
                     <div class="stat-item">
                         <span class="stat-value">-</span>
@@ -346,9 +338,63 @@
         let currentSessionId = crypto.randomUUID();
         // Turn counter for conversation flow visualization
         let flowTurn = 0;
+        // Flag to prevent multiple conversation creations
+        let isCreatingConversation = false;
+        // Make it globally accessible
+        window.isCreatingConversation = isCreatingConversation;
+
+        // Helper function to map entry types to ActivityType enum values
+        function mapEntryTypeToActivityType(entryType) {
+            const mapping = {
+                'fitness': 'FITNESS',
+                'cricket_coaching': 'CRICKET_COACHING',
+                'cricket_match': 'CRICKET_MATCH',
+                'rest_day': 'REST_DAY'
+            };
+            return mapping[entryType] || 'FITNESS';
+        }
+
+        // Function to create a new conversation
+        async function createConversation() {
+            const token = localStorage.getItem("token");
+            const activityType = mapEntryTypeToActivityType(currentEntryType);
+            
+            try {
+                console.log(`📤 Creating conversation for activity type: ${activityType}`);
+                const response = await fetch('/api/conversations', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`,
+                    },
+                    body: JSON.stringify({
+                        activity_type: activityType,
+                        chat_messages: []
+                    })
+                });
+
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(`Failed to create conversation: ${response.status} - ${errorText}`);
+                }
+
+                const conversation = await response.json();
+                console.log('✅ Conversation created:', conversation);
+                return conversation;
+            } catch (error) {
+                console.error('❌ Failed to create conversation:', error);
+                throw error;
+            }
+        }
 
         // Voice modal functions
-        function openVoiceModal(entryType) {
+        async function openVoiceModal(entryType) {
+            // Prevent multiple simultaneous calls
+            if (isCreatingConversation || window.isCreatingConversation) {
+                console.log('⚠️ Conversation creation already in progress, skipping...');
+                return;
+            }
+            
             currentEntryType = entryType;
             const modal = document.getElementById('voice-modal');
             const title = document.getElementById('voice-title');
@@ -378,7 +424,39 @@
             
             // Connect WebSocket if not already connected
             if (!socket || socket.readyState !== WebSocket.OPEN) {
-                connectWebSocket();
+                try {
+                    isCreatingConversation = true;
+                    window.isCreatingConversation = true;
+                    console.log('🔄 Creating new conversation...');
+                    // Show loading state in modal
+                    updateStatus('🔄 Creating conversation session...', 'info');
+                    // create conversation to get session_id as conversation.id.
+                    const conversation = await createConversation();
+                    if (!conversation || !conversation.id) {
+                        console.error('❌ Conversation creation failed or returned null:', conversation);
+                        updateStatus('❌ Failed to create conversation. Please try again.', 'error');
+                        isCreatingConversation = false;
+                        window.isCreatingConversation = false;
+                        modal.classList.add('hidden');
+                        return;
+                    }
+                    currentSessionId = conversation.id;
+                    connectWebSocket(currentSessionId);
+                    console.log('✅ Conversation created successfully:', currentSessionId);
+                    // Update status to show ready state
+                    updateStatus('✅ Ready to record! Click microphone to start', 'success');
+                } catch (error) {
+                    console.error('❌ Failed to create conversation:', error);
+                    // Close modal on error
+                    modal.classList.add('hidden');
+                    alert(`Failed to start voice logging: ${error.message}`);
+                } finally {
+                    isCreatingConversation = false;
+                    window.isCreatingConversation = false;
+                }
+            } else {
+                // WebSocket already connected, just update status
+                updateStatus('✅ Ready to record! Click microphone to start', 'success');
             }
             
             // Send metadata immediately to prepare backend for new activity type
@@ -396,7 +474,7 @@
                 socket.send(JSON.stringify({
                     type: 'voice_data_meta',
                     entry_type: currentEntryType,
-                    user_id: '050c4886-de5f-43bc-a509-ac8b9567e170'
+                    user_id: 'eea15c17-fc8a-4794-b0ba-f25e22f331b4'
                 }));
             } else {
                 console.warn('⚠️ WebSocket not ready, will send metadata when recording starts');
@@ -494,9 +572,9 @@
             }
         }
 
-        function connectWebSocket() {
+        function connectWebSocket(sessionId) {
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            const wsUrl = `${protocol}//${window.location.host}/api/voice_ws/ws/${currentSessionId}`;
+            const wsUrl = `${protocol}//${window.location.host}/api/voice_ws/ws/${sessionId}`;
 
             socket = new WebSocket(wsUrl);
             
@@ -1244,14 +1322,6 @@
         document.addEventListener('DOMContentLoaded', function() {
             const recordBtn = document.getElementById('record-btn');
             recordBtn.addEventListener('click', toggleRecording);
-
-            // Tab navigation
-            document.querySelectorAll('.nav-tab').forEach(tab => {
-                tab.addEventListener('click', function() {
-                    const tabName = this.dataset.tab;
-                    showTab(tabName);
-                });
-            });
 
             // Initialize Mobile Dashboard
             if (typeof MobileDashboard !== 'undefined') {

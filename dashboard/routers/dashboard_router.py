@@ -55,10 +55,6 @@ async def get_user_dashboard(
                     "coaching_sessions": this_week_coaching,
                     "total_activities": this_week_fitness + this_week_coaching,
                 },
-                "recent_activities": {
-                    "fitness": [entry.model_dump(mode="json") for entry in recent_fitness[:5]],
-                    "coaching": [entry.model_dump(mode="json") for entry in recent_coaching[:5]],
-                },
             },
         )
     except Exception as e:

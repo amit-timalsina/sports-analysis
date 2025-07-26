@@ -1,7 +1,6 @@
 """WebSocket connection management for voice processing sessions."""
 
 import json
-import logging
 from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
@@ -10,9 +9,10 @@ from fastapi import WebSocket, WebSocketDisconnect
 
 from common.config.settings import settings
 from common.exceptions import AppError
+from logger import get_logger
 from voice_processing.schemas.processing import WebSocketMessage
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class UUIDEncoder(json.JSONEncoder):
@@ -115,13 +115,12 @@ class ConnectionManager:
             try:
                 # Use custom encoder for UUID objects
                 message_data = message.model_dump()
+                logger.info("Message sent to session %s: %s", session_id, message_data)
                 await websocket.send_text(json.dumps(message_data, cls=UUIDEncoder))
 
                 # Update metadata
                 if session_id in self.session_metadata:
                     self.session_metadata[session_id]["message_count"] += 1
-
-                logger.debug("Message sent to session %s: %s", session_id, message.type)
 
             except WebSocketDisconnect:
                 logger.info(f"WebSocket disconnected during send for session: {session_id}")

@@ -76,11 +76,11 @@ class MobileDashboard {
 
     setupEventListeners() {
         // Activity card clicks
-        document.addEventListener('click', (e) => {
+        document.addEventListener('click', async (e) => {
             const activityCard = e.target.closest('.activity-card');
             if (activityCard) {
                 const activityType = activityCard.dataset.activity;
-                this.startActivityLogging(activityType);
+                await this.startActivityLogging(activityType);
             }
         });
 
@@ -173,7 +173,9 @@ class MobileDashboard {
             this.renderActivityCards(dashboardData);
             this.renderQuickStats(dashboardData);
             this.renderProgressIndicators(dashboardData);
-            this.renderRecentActivity(dashboardData);
+            // this.renderRecentActivity(dashboardData); // REMOVE THIS LINE
+            // Fetch and render recent entries for dashboard
+            await this.fetchRecentEntriesForDashboard().then(entries => this.renderRecentActivity(entries));
             
             console.log('✅ Dashboard data loaded successfully');
         } catch (error) {
@@ -183,6 +185,31 @@ class MobileDashboard {
             this.isLoading = false;
             this.hideLoadingState();
         }
+    }
+
+    // Add this new method to MobileDashboard
+    async fetchRecentEntriesForDashboard() {
+        // Fetch a small number of each type for dashboard
+        const results = await Promise.allSettled([
+            this.fetchEntries('fitness', 2),
+            this.fetchEntries('cricket_coaching', 2),
+            this.fetchEntries('cricket_match', 2),
+            this.fetchEntries('rest_day', 2)
+        ]);
+        const [fitnessResult, coachingResult, matchResult, restResult] = results;
+        const fitnessEntries = fitnessResult.status === 'fulfilled' ? fitnessResult.value : [];
+        const coachingEntries = coachingResult.status === 'fulfilled' ? coachingResult.value : [];
+        const matchEntries = matchResult.status === 'fulfilled' ? matchResult.value : [];
+        const restEntries = restResult.status === 'fulfilled' ? restResult.value : [];
+        // Combine and sort by date
+        const allEntries = [
+            ...fitnessEntries.map(e => ({ ...e, type: 'fitness' })),
+            ...coachingEntries.map(e => ({ ...e, type: 'cricket_coaching' })),
+            ...matchEntries.map(e => ({ ...e, type: 'cricket_match' })),
+            ...restEntries.map(e => ({ ...e, type: 'rest_day' }))
+        ];
+        allEntries.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+        return allEntries.slice(0, 5); // Only show 5 most recent
     }
 
     async fetchDashboardData() {
@@ -322,8 +349,6 @@ class MobileDashboard {
                                (summary.rest_days || 0);
         
         const fitnessGoalProgress = Math.min(Math.round((summary.fitness_sessions || 0) / 4 * 100), 100); // 4 sessions per week target
-        const averageEnergy = summary.average_energy_level || 0;
-        const improvementTrend = insights.fitness_improvement_trends?.overall_trend || 0;
         
         const stats = [
             {
@@ -338,18 +363,6 @@ class MobileDashboard {
                 description: 'Weekly goal',
                 trend: fitnessGoalProgress >= 75 ? '🔥' : fitnessGoalProgress >= 50 ? '👍' : ''
             },
-            {
-                label: 'Energy',
-                value: `${averageEnergy.toFixed(1)}/5`,
-                description: 'Average level',
-                trend: averageEnergy >= 4 ? '⚡' : averageEnergy >= 3 ? '👌' : ''
-            },
-            {
-                label: 'Form',
-                value: improvementTrend >= 0 ? `+${improvementTrend.toFixed(1)}%` : `${improvementTrend.toFixed(1)}%`,
-                description: 'Improvement',
-                trend: improvementTrend > 0 ? '📈' : improvementTrend < -5 ? '📉' : '➡️'
-            }
         ];
 
         quickStats.innerHTML = stats.map(stat => `
@@ -398,31 +411,10 @@ class MobileDashboard {
         `;
     }
 
-    renderRecentActivity(data) {
+    renderRecentActivity(entries) {
         const recentActivity = document.getElementById('recent-activity');
         if (!recentActivity) return;
-
-        const recentEntries = data.data?.recent_entries || {};
-        const allEntries = [];
-
-        // Combine all recent entries with timestamps
-        Object.entries(recentEntries).forEach(([type, entries]) => {
-            entries.forEach(entry => {
-                allEntries.push({
-                    ...entry,
-                    type: type,
-                    timestamp: new Date(entry.created_at)
-                });
-            });
-        });
-
-        // Sort by most recent
-        allEntries.sort((a, b) => b.timestamp - a.timestamp);
-
-        // Take only the most recent 5
-        const recentItems = allEntries.slice(0, 5);
-
-        if (recentItems.length === 0) {
+        if (!entries || entries.length === 0) {
             recentActivity.innerHTML = `
                 <h3>📋 Recent Activity</h3>
                 <div class="empty-state">
@@ -431,20 +423,11 @@ class MobileDashboard {
             `;
             return;
         }
-
-        const activityIcons = {
-            fitness: '🏃',
-            cricket_coaching: '🏏',
-            cricket_match: '🏆',
-            cricket_matches: '🏆',
-            rest_days: '😴'
-        };
-
         recentActivity.innerHTML = `
             <h3>📋 Recent Activity</h3>
             <div class="recent-list">
-                ${recentItems.map(item => this.createRecentActivityCard(item, activityIcons)).join('')}
-                        </div>
+                ${entries.map(entry => this.createEntryCard(entry)).join('')}
+            </div>
         `;
     }
 
@@ -569,44 +552,52 @@ class MobileDashboard {
         const icon = this.getActivityIcon(item.type);
         const title = this.formatActivityTitle(item);
         
-        // Format transcript to handle multiple turns including AI questions
-        const formatTranscript = (transcript) => {
-            if (!transcript) return '<div class="no-transcript">No transcript available</div>';
-
-            // If transcript is stored as JSON string with turns array, try parse
-            try {
-                const parsed = JSON.parse(transcript);
-                if (Array.isArray(parsed)) {
-                    return `
-                        <div class="conversation-turns">
-                            ${parsed.map((turn, idx) => `
-                                <div class="conv-turn">
-                                    <div class="conv-q"><strong>🤖 Q${idx + 1}:</strong> ${turn.question || ''}</div>
-                                    <div class="conv-a"><strong>🗣️ A${idx + 1}:</strong> ${turn.answer || ''}</div>
-                                </div>
-                            `).join('')}
-                        </div>`;
+        // If we have the new transcription format (array of messages), display each as a block
+        let transcriptHtml = '';
+        if (item.transcription && Array.isArray(item.transcription) && item.transcription.length > 0) {
+            transcriptHtml = `<div class="conversation-turns">${item.transcription.map((msg, idx) => `
+                <div class="conv-turn">
+                    <div class="conv-a"><strong>🗣️ ${idx + 1}:</strong> ${msg}</div>
+                </div>
+            `).join('')}</div>`;
+        } else if (item.transcript) {
+            // Fallback to legacy logic
+            const formatTranscript = (transcript) => {
+                if (!transcript) return '<div class="no-transcript">No transcript available</div>';
+                try {
+                    const parsed = JSON.parse(transcript);
+                    if (Array.isArray(parsed)) {
+                        return `
+                            <div class="conversation-turns">
+                                ${parsed.map((turn, idx) => `
+                                    <div class="conv-turn">
+                                        <div class="conv-q"><strong>🤖 Q${idx + 1}:</strong> ${turn.question || ''}</div>
+                                        <div class="conv-a"><strong>🗣️ A${idx + 1}:</strong> ${turn.answer || ''}</div>
+                                    </div>
+                                `).join('')}
+                            </div>`;
+                    }
+                } catch (e) { /* fallback */ }
+                if (transcript.includes('Turn ') && transcript.includes('(conf:')) {
+                    const turns = transcript.split('\n\n').filter(t => t.trim());
+                    const html = turns.map((block, idx) => {
+                        const lines = block.split('\n');
+                        const header = lines[0];
+                        const content = lines.slice(1).join(' ');
+                        return `
+                            <div class="conv-turn">
+                                <div class="conv-a"><strong>🗣️ A${idx + 1}:</strong> ${content}</div>
+                            </div>`;
+                    }).join('');
+                    return `<div class="conversation-turns">${html}</div>`;
                 }
-            } catch (e) { /* fallback */ }
-
-            // Fallback: legacy multi-turn format "Turn X (conf:):" blocks
-            if (transcript.includes('Turn ') && transcript.includes('(conf:')) {
-                const turns = transcript.split('\n\n').filter(t => t.trim());
-                const html = turns.map((block, idx) => {
-                    const lines = block.split('\n');
-                    const header = lines[0];
-                    const content = lines.slice(1).join(' ');
-                    return `
-                        <div class="conv-turn">
-                            <div class="conv-a"><strong>🗣️ A${idx + 1}:</strong> ${content}</div>
-                        </div>`;
-                }).join('');
-                return `<div class="conversation-turns">${html}</div>`;
-            }
-
-            // Simple single transcript
-            return `<div class="transcript-single">${transcript}</div>`;
-        };
+                return `<div class="transcript-single">${transcript}</div>`;
+            };
+            let transcriptToShow = item.transcript || '';
+            transcriptHtml = formatTranscript(transcriptToShow);
+        } else {
+            transcriptHtml = '<div class="no-transcript">No transcript available</div>';
+        }
         
         modalContent.innerHTML = `
             <div class="modal-header">
@@ -627,11 +618,7 @@ class MobileDashboard {
                         </div>
                         <div class="detail-item">
                             <span class="detail-label">Session ID:</span>
-                            <span class="detail-value">${item.session_id || 'N/A'}</span>
-                        </div>
-                        <div class="detail-item">
-                            <span class="detail-label">Confidence Score:</span>
-                            <span class="detail-value">${Math.round((item.confidence_score || 0) * 100)}%</span>
+                            <span class="detail-value">${item.conversation_id || 'N/A'}</span>
                         </div>
                         ${item.processing_duration ? `
                         <div class="detail-item">
@@ -645,7 +632,7 @@ class MobileDashboard {
                 <div class="detail-section">
                     <h4>🎤 Voice Transcription</h4>
                     <div class="transcript-container">
-                        ${formatTranscript(item.transcript)}
+                        ${transcriptHtml}
                     </div>
                 </div>
 
@@ -939,18 +926,34 @@ class MobileDashboard {
         return null;
     }
 
-    startActivityLogging(activityType) {
+    async startActivityLogging(activityType) {
         console.log(`🎤 Starting voice logging for: ${activityType}`);
+        
+        // Prevent multiple simultaneous calls
+        if (window.isCreatingConversation) {
+            console.log('⚠️ Voice logging already in progress, skipping...');
+            return;
+        }
         
         // Set global variable and open modal
         window.currentEntryType = activityType;
         if (typeof openVoiceModal === 'function') {
-            openVoiceModal(activityType);
+            try {
+                await openVoiceModal(activityType);
+            } catch (error) {
+                console.error('Failed to open voice modal:', error);
+                alert(`Failed to start voice logging: ${error.message}`);
+            }
         } else {
             // Direct modal opening if function not available yet
-            setTimeout(() => {
+            setTimeout(async () => {
                 if (typeof openVoiceModal === 'function') {
-                    openVoiceModal(activityType);
+                    try {
+                        await openVoiceModal(activityType);
+                    } catch (error) {
+                        console.error('Failed to open voice modal:', error);
+                        alert(`Failed to start voice logging: ${error.message}`);
+                    }
                 } else {
                     alert(`Voice logging for ${activityType} - please wait for page to fully load!`);
                 }
@@ -1157,6 +1160,8 @@ class MobileDashboard {
                 this.fetchEntries('rest_day', 10)
             ]);
 
+            console.log("Processed results:", results);
+
             // Extract successful results
             const [fitnessResult, coachingResult, matchResult, restResult] = results;
             
@@ -1210,7 +1215,6 @@ class MobileDashboard {
                 'rest_day': '/api/entries/rest-days'
             };
 
-
             const response = await fetch(`${endpoints[type]}?limit=${limit}`, {
                 headers: {
                     'Authorization': `Bearer ${localStorage.getItem('token')}`
@@ -1221,7 +1225,25 @@ class MobileDashboard {
             }
 
             const data = await response.json();
-            return data.data?.entries || [];
+            console.log("Raw response data:", data);
+            
+            // Handle new response format with transcriptions
+            if (data.entries && Array.isArray(data.entries)) {
+                // New format: entries are directly in data.entries
+                const entries = data.entries;
+                const transcriptions = data.transcriptions || [];
+                
+                // Merge transcriptions with entries (transcriptions is now list[list[str]])
+                return entries.map((entry, index) => ({
+                    ...entry,
+                    transcription: transcriptions[index] || []
+                }));
+            } else if (data.data?.entries) {
+                // Legacy format: entries are in data.data.entries
+                return data.data.entries || [];
+            } else {
+                return [];
+            }
         } catch (error) {
             console.error(`❌ Error fetching ${type} entries:`, error);
             return [];
@@ -1333,6 +1355,11 @@ class MobileDashboard {
         // Get key metrics based on activity type
         const metrics = this.getActivityMetrics(entry);
         const highlight = this.getActivityHighlight(entry);
+        
+        // Show transcription if available - take the first message for preview
+        const transcriptionPreview = entry.transcription && entry.transcription.length > 0 
+            ? this.getTranscriptPreview(entry.transcription[0]) 
+            : '';
 
         return `
             <div class="entry-card ${entry.type}" onclick="window.mobileDashboard.showActivityDetails(${JSON.stringify(entry).replace(/"/g, '&quot;')})">
@@ -1344,10 +1371,19 @@ class MobileDashboard {
                         <div class="entry-title">${title}</div>
                         <div class="entry-time">${timeAgo}</div>
                     </div>
-                    <div class="entry-confidence">
-                        ${Math.round((entry.confidence_score || 0) * 100)}%
-                    </div>
                 </div>
+                
+                ${transcriptionPreview ? `
+                    <div class="entry-transcript-preview">
+                        <div class="transcript-preview-header">
+                            <span class="transcript-icon">🎤</span>
+                            <span class="transcript-label">What you said:</span>
+                        </div>
+                        <div class="transcript-preview-content">
+                            "${transcriptionPreview}"
+                        </div>
+                    </div>
+                ` : ''}
                 
                 ${metrics.length > 0 ? `
                     <div class="entry-metrics">
@@ -1522,17 +1558,19 @@ class MobileDashboard {
         }
         
         // Apply search filter
+        console.log("filteredEntries", filteredEntries);
+        console.log("this.currentSearchTerm", this.currentSearchTerm);
         if (this.currentSearchTerm) {
             filteredEntries = filteredEntries.filter(entry => {
                 const searchableText = [
-                    entry.transcript || '',
+                    Array.isArray(entry.transcription) ? entry.transcription.join(' ') : entry.transcription || '',
                     entry.details || '',
                     entry.what_went_well || '',
                     entry.key_shots_played || '',
                     entry.mood_description || '',
                     entry.physical_state || '',
                     entry.mental_state || '',
-                    entry.fitness_type || '',
+                    entry.activity_type || '',
                     entry.session_type || '',
                     entry.match_type || '',
                     entry.rest_type || '',
@@ -1740,6 +1778,18 @@ class MobileDashboard {
             modal.style.display = 'none';
             document.body.style.overflow = 'auto';
         }
+    }
+
+    getTranscriptPreview(transcript) {
+        if (!transcript || transcript.length === 0) return '';
+        
+        // Truncate to 100 characters and add ellipsis if longer
+        const maxLength = 100;
+        if (transcript.length <= maxLength) {
+            return transcript;
+        }
+        
+        return transcript.substring(0, maxLength) + '...';
     }
 
     getMainInfo(entry) {

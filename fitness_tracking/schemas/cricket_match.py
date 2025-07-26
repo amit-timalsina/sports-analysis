@@ -1,5 +1,5 @@
 from datetime import time
-from typing import Any
+from uuid import UUID
 
 from pydantic import Field
 
@@ -153,9 +153,6 @@ class CricketMatchEntryUpdate(AppBaseModel):
     end_time: time | None = None
     match_fee: float | None = Field(None, ge=0.0)
     travel_distance_km: float | None = Field(None, ge=0.0)
-    data_quality_score: float | None = Field(None, ge=0.0, le=1.0)
-    manual_overrides: dict[str, Any] | None = None
-    validation_notes: str | None = None
     energy_level: int | None = Field(None, ge=1, le=10)
     notes: str | None = None
 
@@ -203,9 +200,15 @@ class CricketMatchEntryRead(PrimaryKeyBase, TimestampBase, CricketMatchEntryBase
     end_time: time | None
     match_fee: float | None
     travel_distance_km: float | None
-    # processing_duration: float | None
-    # data_quality_score: float | None
-    # manual_overrides: dict[str, Any] | None
-    # validation_notes: str | None
+
     energy_level: int | None
     notes: str | None
+
+
+class CricketMatchEntryResponse(AppBaseModel):
+    """Schema for cricket match entry API responses with transcription data."""
+
+    entries: list[CricketMatchEntryRead]
+    count: int
+    user_id: UUID
+    transcriptions: list[list[str]] | None = None

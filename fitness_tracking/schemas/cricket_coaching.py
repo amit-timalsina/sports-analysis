@@ -2,6 +2,7 @@
 
 from datetime import time
 from typing import Any
+from uuid import UUID
 
 from pydantic import Field
 
@@ -89,10 +90,6 @@ class CricketCoachingEntryRead(PrimaryKeyBase, TimestampBase, CricketCoachingEnt
     group_size: int | None
     start_time: time | None
     end_time: time | None
-    # processing_duration: float | None
-    # data_quality_score: float | None
-    # manual_overrides: dict[str, Any] | None
-    # validation_notes: str | None
     energy_level: int | None
     notes: str | None
 
@@ -133,7 +130,16 @@ class CricketCoachingEntryUpdate(AppBaseModel):
 
 
 class CricketCoachingEntryResponse(AppBaseModel):
-    """Schema for cricket coaching entry responses."""
+    """Schema for cricket coaching entry API responses with transcription data."""
+
+    entries: list[CricketCoachingEntryRead]
+    count: int
+    user_id: UUID
+    transcriptions: list[list[str]] | None = None
+
+
+class CricketCoachingEntryLegacyResponse(AppBaseModel):
+    """Schema for cricket coaching entry responses (legacy)."""
 
     id: int
     session_id: str
