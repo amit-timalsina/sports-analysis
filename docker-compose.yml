@@ -15,8 +15,7 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
-    networks:
-      - ip6net
+  
 
   web:
     build:
@@ -33,17 +32,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
-    networks:
-      - ip6net
 
 volumes:
   postgres_data:
   web_venv:
 
-networks:
-  ip6net:
-    driver: bridge
-    enable_ipv6: true
-    ipam:
-      config:
-        - subnet: "2001:db8::/64"
