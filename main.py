@@ -30,9 +30,6 @@ static_path = Path("static")
 static_path.mkdir(exist_ok=True)
 app.mount("/static", StaticFiles(directory=static_path), name="static")
 
-logger.info("Database settings: %s", get_database_settings().model_dump())
-logger.info("Database URL: %s", get_database_settings().database_url)
-
 
 # Exception handlers
 @app.exception_handler(AppError)
