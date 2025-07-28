@@ -11,7 +11,6 @@ packages = [{include = "app"}]
 python = "^3.11"
 fastapi = "^0.109.0"
 uvicorn = {extras = ["standard"], version = "^0.27.0"}  # Includes uvloop, httptools, websockets, watchfiles
-websockets = "^12.0"
 python-multipart = "^0.0.6"  # For file uploads and form data
 jinja2 = "^3.1.2"  # Template engine
 psycopg = {extras = ["binary"], version = "^3.1.0"}  # PostgreSQL adapter (modern psycopg3)
@@ -42,6 +41,7 @@ phonenumbers = "^9.0.9"
 pydantic-extra-types = "^2.10.5"
 pyjwt = "^2.10.1"
 supabase = "^2.16.0"
+websockets = "^15.0.1"
 
 [tool.poetry.group.dev.dependencies]
 # Testing

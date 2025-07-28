@@ -1,3 +1,5 @@
+// The dashboard expects the authentication token to be present in localStorage['token'].
+// The login form (authentication.html) stores the token there after successful login.
 /**
  * Cricket Fitness Tracker - Mobile-First Dashboard
  * Provides modern, touch-friendly interface for activity logging and progress tracking
@@ -19,8 +21,14 @@ class MobileDashboard {
     async init() {
         console.log('🏏 Initializing Cricket Fitness Tracker Dashboard');
         
+        // Setup global error handlers for Chart.js
+        this.setupGlobalChartErrorHandlers();
+        
         // Setup event listeners
         this.setupEventListeners();
+        
+        // Setup analytics tab listeners if they exist
+        this.setupAnalyticsTabListeners();
         
         // Load initial data
         await this.loadDashboardData();
@@ -31,13 +39,48 @@ class MobileDashboard {
         console.log('✅ Dashboard initialized successfully');
     }
 
+    /**
+     * Setup global error handlers to catch Chart.js animation errors
+     */
+    setupGlobalChartErrorHandlers() {
+        // Catch any uncaught Chart.js errors
+        const originalRequestAnimationFrame = window.requestAnimationFrame;
+        window.requestAnimationFrame = function(callback) {
+            return originalRequestAnimationFrame(function(timestamp) {
+                try {
+                    callback(timestamp);
+                } catch (error) {
+                    if (error.message && error.message.includes('_fn is not a function')) {
+                        console.warn('Chart.js animation error caught and suppressed:', error);
+                        return;
+                    }
+                    throw error;
+                }
+            });
+        };
+        
+        // Listen for global errors and suppress Chart.js animation errors
+        window.addEventListener('error', function(event) {
+            if (event.error && event.error.message && 
+                (event.error.message.includes('_fn is not a function') ||
+                 event.error.message.includes('core.animation.js') ||
+                 event.error.message.includes('core.animator.js'))) {
+                console.warn('Chart.js animation error suppressed:', event.error);
+                event.preventDefault();
+                return false;
+            }
+        });
+        
+        console.log('✅ Global Chart.js error handlers setup');
+    }
+
     setupEventListeners() {
         // Activity card clicks
-        document.addEventListener('click', (e) => {
+        document.addEventListener('click', async (e) => {
             const activityCard = e.target.closest('.activity-card');
             if (activityCard) {
                 const activityType = activityCard.dataset.activity;
-                this.startActivityLogging(activityType);
+                await this.startActivityLogging(activityType);
             }
         });
 
@@ -58,6 +101,64 @@ class MobileDashboard {
         this.setupPullToRefresh();
     }
 
+    setupAnalyticsTabListeners() {
+        // Listen for analytics sub-tab changes
+        document.addEventListener('click', (e) => {
+            if (e.target.classList.contains('analytics-nav-btn') || 
+                e.target.closest('.analytics-nav-btn')) {
+                
+                const btn = e.target.classList.contains('analytics-nav-btn') ? 
+                           e.target : e.target.closest('.analytics-nav-btn');
+                
+                if (btn && btn.dataset.analytics) {
+                    this.switchAnalyticsTab(btn.dataset.analytics);
+                }
+            }
+        });
+    }
+
+    async switchAnalyticsTab(analyticsType) {
+        try {
+            console.log(`🔄 Switching to ${analyticsType} analytics...`);
+            
+            // Clean up existing charts first
+            this.cleanupChartsOnTabSwitch();
+            
+            // Update active state for analytics nav
+            document.querySelectorAll('.analytics-nav-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            
+            const targetBtn = document.querySelector(`[data-analytics="${analyticsType}"]`);
+            if (targetBtn) {
+                targetBtn.classList.add('active');
+            }
+            
+            // Wait for cleanup to complete
+            await new Promise(resolve => setTimeout(resolve, 250));
+            
+            // Load new analytics
+            if (window.analyticsCharts) {
+                switch (analyticsType) {
+                    case 'fitness':
+                        await window.analyticsCharts.renderFitnessAnalytics();
+                        break;
+                    case 'cricket':
+                        await window.analyticsCharts.renderCricketAnalytics();
+                        break;
+                    case 'combined':
+                        await window.analyticsCharts.renderCombinedAnalytics();
+                        break;
+                    default:
+                        console.warn(`Unknown analytics type: ${analyticsType}`);
+                }
+            }
+            
+        } catch (error) {
+            console.error(`❌ Failed to switch to ${analyticsType} analytics:`, error);
+        }
+    }
+
     async loadDashboardData() {
         if (this.isLoading) return;
         
@@ -72,7 +173,9 @@ class MobileDashboard {
             this.renderActivityCards(dashboardData);
             this.renderQuickStats(dashboardData);
             this.renderProgressIndicators(dashboardData);
-            this.renderRecentActivity(dashboardData);
+            // this.renderRecentActivity(dashboardData); // REMOVE THIS LINE
+            // Fetch and render recent entries for dashboard
+            await this.fetchRecentEntriesForDashboard().then(entries => this.renderRecentActivity(entries));
             
             console.log('✅ Dashboard data loaded successfully');
         } catch (error) {
@@ -84,12 +187,97 @@ class MobileDashboard {
         }
     }
 
+    // Add this new method to MobileDashboard
+    async fetchRecentEntriesForDashboard() {
+        // Fetch a small number of each type for dashboard
+        const results = await Promise.allSettled([
+            this.fetchEntries('fitness', 2),
+            this.fetchEntries('cricket_coaching', 2),
+            this.fetchEntries('cricket_match', 2),
+            this.fetchEntries('rest_day', 2)
+        ]);
+        const [fitnessResult, coachingResult, matchResult, restResult] = results;
+        const fitnessEntries = fitnessResult.status === 'fulfilled' ? fitnessResult.value : [];
+        const coachingEntries = coachingResult.status === 'fulfilled' ? coachingResult.value : [];
+        const matchEntries = matchResult.status === 'fulfilled' ? matchResult.value : [];
+        const restEntries = restResult.status === 'fulfilled' ? restResult.value : [];
+        // Combine and sort by date
+        const allEntries = [
+            ...fitnessEntries.map(e => ({ ...e, type: 'fitness' })),
+            ...coachingEntries.map(e => ({ ...e, type: 'cricket_coaching' })),
+            ...matchEntries.map(e => ({ ...e, type: 'cricket_match' })),
+            ...restEntries.map(e => ({ ...e, type: 'rest_day' }))
+        ];
+        allEntries.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+        return allEntries.slice(0, 5); // Only show 5 most recent
+    }
+
     async fetchDashboardData() {
-        const response = await fetch('/api/dashboard');
+        const response = await fetch('/api/dashboard', {
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${localStorage.getItem('token')}`
+            },
+        });
         if (!response.ok) {
             throw new Error(`Failed to load dashboard: ${response.statusText}`);
         }
-        return await response.json();
+        const data = await response.json();
+        // Adapt the backend response to the legacy format used throughout the dashboard
+        return this.transformDashboardResponse(data);
+    }
+
+    /**
+     * Transforms the newer backend dashboard response into the legacy structure
+     * that the rest of the dashboard rendering logic expects. This avoids large-
+     * scale refactors across the file while we progressively migrate the API.
+     *
+     * @param {object} data Raw response from /api/dashboard
+     * @returns {object} Transformed response with legacy keys (activity_summary, recent_entries, quick_insights)
+     */
+    transformDashboardResponse(data) {
+        if (!data || !data.data) return data;
+
+        const d = data.data;
+
+        // 1. Map the new "this_week" block -> legacy "activity_summary"
+        if (d.this_week) {
+            d.activity_summary = {
+                fitness_sessions: d.this_week.fitness_sessions || 0,
+                cricket_coaching_sessions: d.this_week.coaching_sessions || 0,
+                cricket_match_sessions: d.this_week.cricket_match_sessions || 0,
+                rest_day_sessions: d.this_week.rest_day_sessions || 0,
+            };
+        }
+
+        // 2. Map the new "recent_activities" block -> legacy "recent_entries"
+        if (d.recent_activities) {
+            // Helper to normalize each entry type string
+            const normalizeType = (raw, fallback) => {
+                if (!raw || typeof raw !== 'string') return fallback;
+                return raw.toLowerCase();
+            };
+
+            const normalizeEntries = (entries, expectedType) =>
+                (entries || []).map((e) => ({
+                    ...e,
+                    type: expectedType, // ensure consistent type string for frontend
+                }));
+
+            d.recent_entries = {
+                fitness: normalizeEntries(d.recent_activities.fitness, 'fitness'),
+                cricket_coaching: normalizeEntries(d.recent_activities.coaching, 'cricket_coaching'),
+                cricket_match: normalizeEntries(d.recent_activities.cricket_match, 'cricket_match'),
+                rest_day: normalizeEntries(d.recent_activities.rest_day, 'rest_day'),
+            };
+        }
+
+        // 3. Provide an empty quick_insights placeholder to prevent undefined errors
+        if (!d.quick_insights) {
+            d.quick_insights = {};
+        }
+
+        return data;
     }
 
     renderActivityCards(data) {
@@ -117,14 +305,14 @@ class MobileDashboard {
                 icon: '🏆',
                 title: 'Match',
                 description: 'Game performance',
-                apiKey: 'cricket_matches'
+                apiKey: 'cricket_match'
             },
             {
                 type: 'rest_day',
                 icon: '😴',
                 title: 'Rest Day',
                 description: 'Recovery tracking',
-                apiKey: 'rest_days'
+                apiKey: 'rest_day'
             }
         ];
 
@@ -144,7 +332,7 @@ class MobileDashboard {
                 </div>
             `;
         }).join('');
-    }
+    }matches
 
     renderQuickStats(data) {
         const quickStats = document.getElementById('quick-stats');
@@ -160,8 +348,6 @@ class MobileDashboard {
                                (summary.rest_days || 0);
         
         const fitnessGoalProgress = Math.min(Math.round((summary.fitness_sessions || 0) / 4 * 100), 100); // 4 sessions per week target
-        const averageEnergy = summary.average_energy_level || 0;
-        const improvementTrend = insights.fitness_improvement_trends?.overall_trend || 0;
         
         const stats = [
             {
@@ -176,18 +362,6 @@ class MobileDashboard {
                 description: 'Weekly goal',
                 trend: fitnessGoalProgress >= 75 ? '🔥' : fitnessGoalProgress >= 50 ? '👍' : ''
             },
-            {
-                label: 'Energy',
-                value: `${averageEnergy.toFixed(1)}/5`,
-                description: 'Average level',
-                trend: averageEnergy >= 4 ? '⚡' : averageEnergy >= 3 ? '👌' : ''
-            },
-            {
-                label: 'Form',
-                value: improvementTrend >= 0 ? `+${improvementTrend.toFixed(1)}%` : `${improvementTrend.toFixed(1)}%`,
-                description: 'Improvement',
-                trend: improvementTrend > 0 ? '📈' : improvementTrend < -5 ? '📉' : '➡️'
-            }
         ];
 
         quickStats.innerHTML = stats.map(stat => `
@@ -210,6 +384,8 @@ class MobileDashboard {
         // Fitness progress
         const fitnessProgress = (activitySummary.fitness_sessions || 0) / 7 * 100;
         const cricketProgress = (activitySummary.cricket_coaching_sessions || 0) / 5 * 100;
+        const cricketMatchProgress = (activitySummary.cricket_match_sessions || 0) / 5 * 100;
+        const restDayProgress = (activitySummary.rest_day_sessions || 0) / 5 * 100;
 
         progressSection.innerHTML = `
             <h3>📈 This Week's Progress</h3>
@@ -227,40 +403,39 @@ class MobileDashboard {
             <div class="progress-item">
                 <div class="progress-text">
                     <span>Cricket Practice</span>
-                    <span>${activitySummary.cricket_coaching_sessions || 0}/5 sessions</span>
+                    <span>${activitySummary.cricket_coaching_sessions || 0}/7 sessions</span>
                 </div>
                 <div class="progress-bar">
                     <div class="progress-fill" style="width: ${Math.min(cricketProgress, 100)}%"></div>
                 </div>
             </div>
+
+            <div class="progress-item">
+                <div class="progress-text">
+                    <span>Cricket Match</span>
+                    <span>${activitySummary.cricket_match_sessions || 0}/7 sessions</span>
+                </div>
+                <div class="progress-bar">
+                    <div class="progress-fill" style="width: ${Math.min(cricketMatchProgress, 100)}%"></div>
+                </div>
+            </div>
+
+            <div class="progress-item">
+                <div class="progress-text">
+                    <span>Rest Day</span>
+                    <span>${activitySummary.rest_day_sessions || 0}/7 sessions</span>
+                </div>
+                <div class="progress-bar">
+                    <div class="progress-fill" style="width: ${Math.min(restDayProgress, 100)}%"></div>
+                </div>
+            </div>
         `;
     }
 
-    renderRecentActivity(data) {
+    renderRecentActivity(entries) {
         const recentActivity = document.getElementById('recent-activity');
         if (!recentActivity) return;
-
-        const recentEntries = data.data?.recent_entries || {};
-        const allEntries = [];
-
-        // Combine all recent entries with timestamps
-        Object.entries(recentEntries).forEach(([type, entries]) => {
-            entries.forEach(entry => {
-                allEntries.push({
-                    ...entry,
-                    type: type,
-                    timestamp: new Date(entry.created_at)
-                });
-            });
-        });
-
-        // Sort by most recent
-        allEntries.sort((a, b) => b.timestamp - a.timestamp);
-
-        // Take only the most recent 5
-        const recentItems = allEntries.slice(0, 5);
-
-        if (recentItems.length === 0) {
+        if (!entries || entries.length === 0) {
             recentActivity.innerHTML = `
                 <h3>📋 Recent Activity</h3>
                 <div class="empty-state">
@@ -269,221 +444,70 @@ class MobileDashboard {
             `;
             return;
         }
-
-        const activityIcons = {
-            fitness: '🏃',
-            cricket_coaching: '🏏',
-            cricket_matches: '🏆',
-            rest_days: '😴'
-        };
-
         recentActivity.innerHTML = `
             <h3>📋 Recent Activity</h3>
             <div class="recent-list">
-                ${recentItems.map(item => this.createRecentActivityCard(item, activityIcons)).join('')}
-                        </div>
-        `;
-    }
-
-    createRecentActivityCard(item, activityIcons) {
-        const icon = activityIcons[item.type] || '📝';
-        const timeAgo = this.formatRelativeTime(new Date(item.created_at));
-        const confidence = Math.round((item.confidence_score || 0) * 100);
-        
-        // Get transcript preview (first 60 characters)
-        const getTranscriptPreview = (transcript) => {
-            if (!transcript) return 'No transcript available';
-            
-            // Handle multi-turn transcripts - extract first meaningful content
-            if (transcript.includes('Turn ') && transcript.includes('(conf:')) {
-                const turns = transcript.split('\n\n').filter(turn => turn.trim());
-                if (turns.length > 0) {
-                    const firstTurn = turns[0];
-                    const lines = firstTurn.split('\n');
-                    const contentLines = lines.slice(1); // Skip header
-                    const content = contentLines.join(' ').trim();
-                    return content.length > 60 ? content.substring(0, 60) + '...' : content;
-                }
-            }
-            
-            // Single transcript
-            return transcript.length > 60 ? transcript.substring(0, 60) + '...' : transcript;
-        };
-        
-        const transcriptPreview = getTranscriptPreview(item.transcript);
-        const transcriptTurnCount = item.transcript && item.transcript.includes('Turn ') ? 
-            (item.transcript.match(/Turn \d+/g) || []).length : 1;
-
-        // Get key metrics based on activity type
-        const getKeyMetrics = (item) => {
-            switch (item.type) {
-                case 'fitness':
-                    return [
-                        item.duration_minutes ? `${item.duration_minutes}min` : null,
-                        item.intensity ? item.intensity.charAt(0).toUpperCase() + item.intensity.slice(1) : null,
-                        item.energy_level ? `Energy: ${item.energy_level}/5` : null
-                    ].filter(Boolean);
-                
-                case 'cricket_coaching':
-                    return [
-                        item.duration_minutes ? `${item.duration_minutes}min` : null,
-                        item.confidence_level ? `Confidence: ${item.confidence_level}/10` : null,
-                        item.focus_level ? `Focus: ${item.focus_level}/10` : null
-                    ].filter(Boolean);
-                
-                case 'cricket_matches':
-                    return [
-                        item.runs_scored !== null ? `${item.runs_scored} runs` : null,
-                        item.balls_faced !== null ? `${item.balls_faced} balls` : null,
-                        (item.runs_scored && item.balls_faced) ? `SR: ${Math.round((item.runs_scored / item.balls_faced) * 100)}%` : null
-                    ].filter(Boolean);
-                
-                case 'rest_days':
-                    return [
-                        item.energy_level ? `Energy: ${item.energy_level}/10` : null,
-                        item.fatigue_level ? `Fatigue: ${item.fatigue_level}/10` : null,
-                        item.rest_type ? item.rest_type.replace(/_/g, ' ') : null
-                    ].filter(Boolean);
-                
-                default:
-                    return [];
-            }
-        };
-
-        const metrics = getKeyMetrics(item);
-        const activityTitle = this.formatActivityTitle(item);
-
-        return `
-            <div class="recent-activity-card ${item.type}" onclick="window.mobileDashboard.showActivityDetails(${JSON.stringify(item).replace(/"/g, '&quot;')})">
-                <div class="activity-card-header">
-                    <div class="activity-icon-container">
-                        <span class="activity-icon">${icon}</span>
-                    </div>
-                    <div class="activity-main-info">
-                        <div class="activity-title">${activityTitle}</div>
-                        <div class="activity-meta">
-                            <span class="activity-time">${timeAgo}</span>
-                            <span class="activity-confidence" title="Speech Recognition Confidence">${confidence}%</span>
-                            ${transcriptTurnCount > 1 ? `<span class="turn-indicator" title="Multi-turn conversation">💬 ${transcriptTurnCount} turns</span>` : ''}
-                        </div>
-                    </div>
-                </div>
-                
-                ${metrics.length > 0 ? `
-                    <div class="activity-quick-metrics">
-                        ${metrics.slice(0, 3).map(metric => `<span class="quick-metric">${metric}</span>`).join('')}
-                    </div>
-                ` : ''}
-                
-                <div class="activity-transcript-preview">
-                    <div class="transcript-preview-header">
-                        <span class="transcript-icon">🎤</span>
-                        <span class="transcript-label">What you said:</span>
-                    </div>
-                    <div class="transcript-preview-content" title="${item.transcript || 'No transcript'}">${transcriptPreview}</div>
-                </div>
-                
-                <div class="activity-card-footer">
-                    <span class="activity-id">ID: ${item.id}</span>
-                    <div class="click-indicator">
-                        <span>👆 Tap for full details</span>
-                    </div>
-                </div>
+                ${entries.map(entry => this.createEntryCard(entry)).join('')}
             </div>
         `;
     }
 
+ 
+
     showActivityDetails(item) {
+        console.log('🔍 Showing details for activity:', item);
         const modal = document.getElementById('activityModal');
         const modalContent = document.getElementById('activityModalContent');
         
         const icon = this.getActivityIcon(item.type);
         const title = this.formatActivityTitle(item);
         
-        // Format transcript to handle multiple turns
-        const formatTranscript = (transcript) => {
-            if (!transcript) return '<div class="no-transcript">No transcript available</div>';
-            
-            // Check if transcript contains multiple turns (has "Turn X (conf:" pattern)
-            if (transcript.includes('Turn ') && transcript.includes('(conf:')) {
-                // Split by double newline and format each turn
-                const turns = transcript.split('\n\n').filter(turn => turn.trim());
-                
-                if (turns.length > 1) {
-                    // Multiple turns - show conversation flow
-                    const conversationHeader = `
-                        <div class="conversation-summary">
-                            <div class="conversation-stats">
-                                <span class="turn-count">💬 ${turns.length} conversation turns</span>
-                                <span class="conversation-flow">🔄 Multi-turn interaction</span>
-                            </div>
-                        </div>
-                    `;
-                    
-                    const formattedTurns = turns.map((turn, index) => {
-                        const lines = turn.split('\n');
-                        const headerLine = lines[0];
-                        const contentLines = lines.slice(1);
-                        
-                        // Extract confidence from header like "Turn 1 (conf: 0.95):"
-                        const confMatch = headerLine.match(/conf:\s*([\d.]+)/);
-                        const confidence = confMatch ? (parseFloat(confMatch[1]) * 100).toFixed(0) : 'N/A';
-                        const turnNumber = index + 1;
-                        
+        // If we have the new transcription format (array of messages), display each as a block
+        let transcriptHtml = '';
+        if (item.transcription && Array.isArray(item.transcription) && item.transcription.length > 0) {
+            transcriptHtml = `<div class="conversation-turns">${item.transcription.map((msg, idx) => `
+                <div class="conv-turn">
+                    <div class="conv-a"><strong>🗣️ ${idx + 1}:</strong> ${msg}</div>
+                </div>
+            `).join('')}</div>`;
+        } else if (item.transcript) {
+            // Fallback to legacy logic
+            const formatTranscript = (transcript) => {
+                if (!transcript) return '<div class="no-transcript">No transcript available</div>';
+                try {
+                    const parsed = JSON.parse(transcript);
+                    if (Array.isArray(parsed)) {
                         return `
-                            <div class="transcript-turn" data-turn="${turnNumber}">
-                                <div class="turn-header">
-                                    <div class="turn-info">
-                                        <span class="turn-number">Turn ${turnNumber}</span>
-                                        <span class="turn-confidence" title="Speech Recognition Confidence">
-                                            ${confidence}% confidence
-                                        </span>
+                            <div class="conversation-turns">
+                                ${parsed.map((turn, idx) => `
+                                    <div class="conv-turn">
+                                        <div class="conv-q"><strong>🤖 Q${idx + 1}:</strong> ${turn.question || ''}</div>
+                                        <div class="conv-a"><strong>🗣️ A${idx + 1}:</strong> ${turn.answer || ''}</div>
                                     </div>
-                                    ${index === 0 ? '<span class="turn-badge initial">Initial</span>' : 
-                                      index === turns.length - 1 ? '<span class="turn-badge final">Final</span>' : 
-                                      '<span class="turn-badge follow-up">Follow-up</span>'}
-                                </div>
-                                <div class="turn-content">
-                                    ${contentLines.length > 0 ? contentLines.join('<br>') : 'No additional content'}
-                                </div>
-                            </div>
-                        `;
+                                `).join('')}
+                            </div>`;
+                    }
+                } catch (e) { /* fallback */ }
+                if (transcript.includes('Turn ') && transcript.includes('(conf:')) {
+                    const turns = transcript.split('\n\n').filter(t => t.trim());
+                    const html = turns.map((block, idx) => {
+                        const lines = block.split('\n');
+                        const header = lines[0];
+                        const content = lines.slice(1).join(' ');
+                        return `
+                            <div class="conv-turn">
+                                <div class="conv-a"><strong>🗣️ A${idx + 1}:</strong> ${content}</div>
+                            </div>`;
                     }).join('');
-                    
-                    return conversationHeader + '<div class="conversation-turns">' + formattedTurns + '</div>';
-                } else {
-                    // Single turn from multi-turn format
-                    const lines = turns[0].split('\n');
-                    const headerLine = lines[0];
-                    const contentLines = lines.slice(1);
-                    const confMatch = headerLine.match(/conf:\s*([\d.]+)/);
-                    const confidence = confMatch ? (parseFloat(confMatch[1]) * 100).toFixed(0) : 'N/A';
-                    
-                    return `
-                        <div class="single-turn-conversation">
-                            <div class="turn-header single">
-                                <span class="turn-number">Single Turn</span>
-                                <span class="turn-confidence">${confidence}% confidence</span>
-                            </div>
-                            <div class="turn-content single">
-                                ${contentLines.length > 0 ? contentLines.join('<br>') : 'No additional content'}
-                            </div>
-                        </div>
-                    `;
+                    return `<div class="conversation-turns">${html}</div>`;
                 }
-            } else {
-                // Legacy single transcript format
-                return `
-                    <div class="transcript-single legacy">
-                        <div class="single-transcript-header">
-                            <span class="transcript-type">📝 Direct Transcript</span>
-                            <span class="transcript-note">Single recording</span>
-                        </div>
-                        <div class="single-transcript-content">${transcript}</div>
-                    </div>
-                `;
-            }
-        };
+                return `<div class="transcript-single">${transcript}</div>`;
+            };
+            let transcriptToShow = item.transcript || '';
+            transcriptHtml = formatTranscript(transcriptToShow);
+        } else {
+            transcriptHtml = '<div class="no-transcript">No transcript available</div>';
+        }
         
         modalContent.innerHTML = `
             <div class="modal-header">
@@ -504,11 +528,7 @@ class MobileDashboard {
                         </div>
                         <div class="detail-item">
                             <span class="detail-label">Session ID:</span>
-                            <span class="detail-value">${item.session_id || 'N/A'}</span>
-                        </div>
-                        <div class="detail-item">
-                            <span class="detail-label">Confidence Score:</span>
-                            <span class="detail-value">${Math.round((item.confidence_score || 0) * 100)}%</span>
+                            <span class="detail-value">${item.conversation_id || 'N/A'}</span>
                         </div>
                         ${item.processing_duration ? `
                         <div class="detail-item">
@@ -522,7 +542,7 @@ class MobileDashboard {
                 <div class="detail-section">
                     <h4>🎤 Voice Transcription</h4>
                     <div class="transcript-container">
-                        ${formatTranscript(item.transcript)}
+                        ${transcriptHtml}
                     </div>
                 </div>
 
@@ -544,11 +564,11 @@ class MobileDashboard {
                         </div>
                         <div class="detail-item">
                             <span class="detail-label">Activity Type:</span>
-                            <span class="detail-value">${item.type}</span>
+                            <span class="detail-value">${item.activity_type || item.type}</span>
                         </div>
                         <div class="detail-item">
-                            <span class="detail-label">User ID:</span>
-                            <span class="detail-value">${item.user_id || 'demo_user'}</span>
+                            <span class="detail-label">Conversation ID:</span>
+                            <span class="detail-value">${item.conversation_id || 'N/A'}</span>
                         </div>
                         ${item.updated_at ? `
                         <div class="detail-item">
@@ -556,6 +576,15 @@ class MobileDashboard {
                             <span class="detail-value">${this.formatDateTime(item.updated_at)}</span>
                         </div>
                         ` : ''}
+                        
+                        ${this.formatTechnicalFields(item)}
+                    </div>
+                </div>
+
+                <div class="detail-section">
+                    <h4>🔍 Raw JSON Data</h4>
+                    <div class="json-container">
+                        <pre class="json-display">${JSON.stringify(item, null, 2)}</pre>
                     </div>
                 </div>
             </div>
@@ -569,6 +598,7 @@ class MobileDashboard {
         const icons = {
             fitness: '🏃',
             cricket_coaching: '🏏',
+            cricket_match: '🏆',
             cricket_matches: '🏆',
             rest_day: '😴'
         };
@@ -583,6 +613,352 @@ class MobileDashboard {
             rest_day: `${item.rest_type || 'Rest'} Day`
         };
         return titles[item.type] || 'Activity';
+    }
+
+    formatTechnicalFields(item) {
+        let fieldsHtml = '';
+        
+        switch (item.type) {
+            case 'cricket_coaching':
+                // Session Structure
+                if (item.warm_up_minutes !== undefined) {
+                    fieldsHtml += `<div class="detail-item">
+                        <span class="detail-label">Warm-up Duration:</span>
+                        <span class="detail-value">${item.warm_up_minutes} minutes</span>
+                    </div>`;
+                }
+                if (item.skill_work_minutes !== undefined) {
+                    fieldsHtml += `<div class="detail-item">
+                        <span class="detail-label">Skill Work Duration:</span>
+                        <span class="detail-value">${item.skill_work_minutes} minutes</span>
+                    </div>`;
+                }
+                if (item.game_simulation_minutes !== undefined) {
+                    fieldsHtml += `<div class="detail-item">
+                        <span class="detail-label">Game Simulation:</span>
+                        <span class="detail-value">${item.game_simulation_minutes} minutes</span>
+                    </div>`;
+                }
+                if (item.cool_down_minutes !== undefined) {
+                    fieldsHtml += `<div class="detail-item">
+                        <span class="detail-label">Cool-down Duration:</span>
+                        <span class="detail-value">${item.cool_down_minutes} minutes</span>
+                    </div>`;
+                }
+                
+                // Training Details
+                if (item.primary_focus) {
+                    fieldsHtml += `<div class="detail-item">
+                        <span class="detail-label">Primary Focus:</span>
+                        <span class="detail-value">${item.primary_focus.replace(/_/g, ' ')}</span>
+                    </div>`;
+                }
+                if (item.secondary_focus) {
+                    fieldsHtml += `<div class="detail-item">
+                        <span class="detail-label">Secondary Focus:</span>
+                        <span class="detail-value">${item.secondary_focus.replace(/_/g, ' ')}</span>
+                    </div>`;
+                }
+                if (item.discipline_focus) {
+                    fieldsHtml += `<div class="detail-item">
+                        <span class="detail-label">Discipline Focus:</span>
+                        <span class="detail-value">${item.discipline_focus.replace(/_/g, ' ')}</span>
+                    </div>`;
+                }
+                
+                // Skills and Equipment
+                if (item.skills_practiced && Array.isArray(item.skills_practiced) && item.skills_practiced.length > 0) {
+                    fieldsHtml += `<div class="detail-item">
+                        <span class="detail-label">Skills Practiced:</span>
+                        <span class="detail-value">${item.skills_practiced.join(', ')}</span>
+                    </div>`;
+                }
+                if (item.equipment_used && Array.isArray(item.equipment_used) && item.equipment_used.length > 0) {
+                    fieldsHtml += `<div class="detail-item">
+                        <span class="detail-label">Equipment Used:</span>
+                        <span class="detail-value">${item.equipment_used.join(', ')}</span>
+                    </div>`;
+                }
+                
+                // Ratings and Assessment
+                if (item.technique_rating !== undefined) {
+                    fieldsHtml += `<div class="detail-item">
+                        <span class="detail-label">Technique Rating:</span>
+                        <span class="detail-value">${item.technique_rating}/10</span>
+                    </div>`;
+                }
+                if (item.effort_level !== undefined) {
+                    fieldsHtml += `<div class="detail-item">
+                        <span class="detail-label">Effort Level:</span>
+                        <span class="detail-value">${item.effort_level}/10</span>
+                    </div>`;
+                }
+                
+                // Session Goals and Achievement
+                if (item.session_goals && Array.isArray(item.session_goals) && item.session_goals.length > 0) {
+                    fieldsHtml += `<div class="detail-item">
+                        <span class="detail-label">Session Goals:</span>
+                        <span class="detail-value">${item.session_goals.join(', ')}</span>
+                    </div>`;
+                }
+                if (item.goals_achieved && Array.isArray(item.goals_achieved) && item.goals_achieved.length > 0) {
+                    fieldsHtml += `<div class="detail-item">
+                        <span class="detail-label">Goals Achieved:</span>
+                        <span class="detail-value">${item.goals_achieved.join(', ')}</span>
+                    </div>`;
+                }
+                if (item.improvement_areas && Array.isArray(item.improvement_areas) && item.improvement_areas.length > 0) {
+                    fieldsHtml += `<div class="detail-item">
+                        <span class="detail-label">Improvement Areas:</span>
+                        <span class="detail-value">${item.improvement_areas.join(', ')}</span>
+                    </div>`;
+                }
+                
+                // Coach and Facility Info
+                if (item.coach_name) {
+                    fieldsHtml += `<div class="detail-item">
+                        <span class="detail-label">Coach Name:</span>
+                        <span class="detail-value">${item.coach_name}</span>
+                    </div>`;
+                }
+                if (item.facility_name) {
+                    fieldsHtml += `<div class="detail-item">
+                        <span class="detail-label">Facility:</span>
+                        <span class="detail-value">${item.facility_name}</span>
+                    </div>`;
+                }
+                if (item.indoor_outdoor) {
+                    fieldsHtml += `<div class="detail-item">
+                        <span class="detail-label">Environment:</span>
+                        <span class="detail-value">${item.indoor_outdoor.replace(/_/g, ' ')}</span>
+                    </div>`;
+                }
+                
+                // Session Logistics
+                if (item.start_time) {
+                    fieldsHtml += `<div class="detail-item">
+                        <span class="detail-label">Start Time:</span>
+                        <span class="detail-value">${item.start_time}</span>
+                    </div>`;
+                }
+                if (item.end_time) {
+                    fieldsHtml += `<div class="detail-item">
+                        <span class="detail-label">End Time:</span>
+                        <span class="detail-value">${item.end_time}</span>
+                    </div>`;
+                }
+                if (item.group_size !== undefined) {
+                    fieldsHtml += `<div class="detail-item">
+                        <span class="detail-label">Group Size:</span>
+                        <span class="detail-value">${item.group_size} ${item.group_size === 1 ? 'person' : 'people'}</span>
+                    </div>`;
+                }
+                if (item.session_cost !== undefined && item.session_cost > 0) {
+                    fieldsHtml += `<div class="detail-item">
+                        <span class="detail-label">Session Cost:</span>
+                        <span class="detail-value">$${item.session_cost}</span>
+                    </div>`;
+                }
+                
+                // Coach Feedback and Next Steps
+                if (item.coach_feedback) {
+                    fieldsHtml += `<div class="detail-item">
+                        <span class="detail-label">Coach Feedback:</span>
+                        <span class="detail-value">${item.coach_feedback}</span>
+                    </div>`;
+                }
+                if (item.next_session_focus) {
+                    fieldsHtml += `<div class="detail-item">
+                        <span class="detail-label">Next Session Focus:</span>
+                        <span class="detail-value">${item.next_session_focus}</span>
+                    </div>`;
+                }
+                break;
+                
+            case 'fitness':
+                // Exercise Details
+                if (item.exercise_name) {
+                    fieldsHtml += `<div class="detail-item">
+                        <span class="detail-label">Exercise Name:</span>
+                        <span class="detail-value">${item.exercise_name}</span>
+                    </div>`;
+                }
+                if (item.exercise_type) {
+                    fieldsHtml += `<div class="detail-item">
+                        <span class="detail-label">Exercise Type:</span>
+                        <span class="detail-value">${item.exercise_type}</span>
+                    </div>`;
+                }
+                if (item.duration_minutes !== undefined) {
+                    fieldsHtml += `<div class="detail-item">
+                        <span class="detail-label">Duration:</span>
+                        <span class="detail-value">${item.duration_minutes} minutes</span>
+                    </div>`;
+                }
+                if (item.intensity) {
+                    fieldsHtml += `<div class="detail-item">
+                        <span class="detail-label">Intensity Level:</span>
+                        <span class="detail-value">${item.intensity}</span>
+                    </div>`;
+                }
+                
+                // Physical Metrics
+                if (item.calories_burned !== undefined && item.calories_burned !== null) {
+                    fieldsHtml += `<div class="detail-item">
+                        <span class="detail-label">Calories Burned:</span>
+                        <span class="detail-value">${item.calories_burned} cal</span>
+                    </div>`;
+                }
+                if (item.distance_km !== undefined && item.distance_km !== null) {
+                    fieldsHtml += `<div class="detail-item">
+                        <span class="detail-label">Distance:</span>
+                        <span class="detail-value">${item.distance_km} km</span>
+                    </div>`;
+                }
+                if (item.weight_kg !== undefined && item.weight_kg !== null) {
+                    fieldsHtml += `<div class="detail-item">
+                        <span class="detail-label">Weight Used:</span>
+                        <span class="detail-value">${item.weight_kg} kg</span>
+                    </div>`;
+                }
+                
+                // Sets and Reps
+                if (item.sets !== undefined && item.sets !== null) {
+                    fieldsHtml += `<div class="detail-item">
+                        <span class="detail-label">Sets:</span>
+                        <span class="detail-value">${item.sets}</span>
+                    </div>`;
+                }
+                if (item.reps !== undefined && item.reps !== null) {
+                    fieldsHtml += `<div class="detail-item">
+                        <span class="detail-label">Reps:</span>
+                        <span class="detail-value">${item.reps}</span>
+                    </div>`;
+                }
+                
+                // Heart Rate Data
+                if (item.heart_rate_avg !== undefined && item.heart_rate_avg !== null) {
+                    fieldsHtml += `<div class="detail-item">
+                        <span class="detail-label">Average Heart Rate:</span>
+                        <span class="detail-value">${item.heart_rate_avg} bpm</span>
+                    </div>`;
+                }
+                if (item.heart_rate_max !== undefined && item.heart_rate_max !== null) {
+                    fieldsHtml += `<div class="detail-item">
+                        <span class="detail-label">Max Heart Rate:</span>
+                        <span class="detail-value">${item.heart_rate_max} bpm</span>
+                    </div>`;
+                }
+                
+                // Mental and Physical State
+                if (item.mental_state) {
+                    fieldsHtml += `<div class="detail-item">
+                        <span class="detail-label">Mental State:</span>
+                        <span class="detail-value">${item.mental_state}</span>
+                    </div>`;
+                }
+                if (item.energy_level !== undefined && item.energy_level !== null) {
+                    fieldsHtml += `<div class="detail-item">
+                        <span class="detail-label">Energy Level:</span>
+                        <span class="detail-value">${item.energy_level}/10</span>
+                    </div>`;
+                }
+                if (item.workout_rating !== undefined && item.workout_rating !== null) {
+                    fieldsHtml += `<div class="detail-item">
+                        <span class="detail-label">Workout Rating:</span>
+                        <span class="detail-value">${item.workout_rating}/10</span>
+                    </div>`;
+                }
+                
+                // Location and Environment
+                if (item.location) {
+                    fieldsHtml += `<div class="detail-item">
+                        <span class="detail-label">Location:</span>
+                        <span class="detail-value">${item.location}</span>
+                    </div>`;
+                }
+                if (item.gym_name) {
+                    fieldsHtml += `<div class="detail-item">
+                        <span class="detail-label">Gym/Facility:</span>
+                        <span class="detail-value">${item.gym_name}</span>
+                    </div>`;
+                }
+                if (item.weather_conditions) {
+                    fieldsHtml += `<div class="detail-item">
+                        <span class="detail-label">Weather:</span>
+                        <span class="detail-value">${item.weather_conditions}</span>
+                    </div>`;
+                }
+                if (item.temperature !== undefined && item.temperature !== null) {
+                    fieldsHtml += `<div class="detail-item">
+                        <span class="detail-label">Temperature:</span>
+                        <span class="detail-value">${item.temperature}°C</span>
+                    </div>`;
+                }
+                
+                // Equipment and Social
+                if (item.equipment_used) {
+                    fieldsHtml += `<div class="detail-item">
+                        <span class="detail-label">Equipment Used:</span>
+                        <span class="detail-value">${item.equipment_used}</span>
+                    </div>`;
+                }
+                if (item.workout_partner) {
+                    fieldsHtml += `<div class="detail-item">
+                        <span class="detail-label">Workout Partner:</span>
+                        <span class="detail-value">${item.workout_partner}</span>
+                    </div>`;
+                }
+                if (item.trainer_name) {
+                    fieldsHtml += `<div class="detail-item">
+                        <span class="detail-label">Trainer:</span>
+                        <span class="detail-value">${item.trainer_name}</span>
+                    </div>`;
+                }
+                
+                // Timing
+                if (item.start_time) {
+                    fieldsHtml += `<div class="detail-item">
+                        <span class="detail-label">Start Time:</span>
+                        <span class="detail-value">${item.start_time}</span>
+                    </div>`;
+                }
+                if (item.end_time) {
+                    fieldsHtml += `<div class="detail-item">
+                        <span class="detail-label">End Time:</span>
+                        <span class="detail-value">${item.end_time}</span>
+                    </div>`;
+                }
+                break;
+                
+            case 'cricket_match':
+                // Add cricket match-specific technical fields
+                if (item.match_type) {
+                    fieldsHtml += `<div class="detail-item">
+                        <span class="detail-label">Match Type:</span>
+                        <span class="detail-value">${item.match_type.replace(/_/g, ' ')}</span>
+                    </div>`;
+                }
+                if (item.runs_scored !== null && item.runs_scored !== undefined) {
+                    fieldsHtml += `<div class="detail-item">
+                        <span class="detail-label">Runs Scored:</span>
+                        <span class="detail-value">${item.runs_scored}</span>
+                    </div>`;
+                }
+                break;
+                
+            case 'rest_day':
+                // Add rest day-specific technical fields
+                if (item.rest_type) {
+                    fieldsHtml += `<div class="detail-item">
+                        <span class="detail-label">Rest Type:</span>
+                        <span class="detail-value">${item.rest_type.replace(/_/g, ' ')}</span>
+                    </div>`;
+                }
+                break;
+        }
+        
+        return fieldsHtml;
     }
 
     formatDateTime(dateString) {
@@ -678,6 +1054,7 @@ class MobileDashboard {
                 }
                 break;
 
+            case 'cricket_match':
             case 'cricket_matches':
                 if (item.match_type) {
                     detailsHtml += `<div class="detail-item">
@@ -706,6 +1083,7 @@ class MobileDashboard {
                 }
                 break;
 
+            case 'rest_day':
             case 'rest_days':
                 if (item.rest_type) {
                     detailsHtml += `<div class="detail-item">
@@ -740,74 +1118,42 @@ class MobileDashboard {
 
     getActivityMetrics(item) {
         switch (item.type) {
-            case 'fitness':
+            case 'fitness': {
                 const metrics = [];
-                if (item.duration_minutes) {
-                    metrics.push({ label: 'Duration', value: `${item.duration_minutes} min` });
-                }
-                if (item.intensity) {
-                    metrics.push({ label: 'Intensity', value: item.intensity.charAt(0).toUpperCase() + item.intensity.slice(1) });
-                }
-                if (item.energy_level) {
-                    metrics.push({ label: 'Energy Level', value: `${item.energy_level}/5` });
-                }
-                if (item.distance_km) {
-                    metrics.push({ label: 'Distance', value: `${item.distance_km} km` });
-                }
+                if (item.duration_minutes) metrics.push({ label: 'Duration', value: `${item.duration_minutes} min` });
+                if (item.intensity) metrics.push({ label: 'Intensity', value: item.intensity });
+                if (item.energy_level) metrics.push({ label: 'Energy', value: `${item.energy_level}/10` });
+                if (item.distance_km) metrics.push({ label: 'Distance', value: `${item.distance_km} km` });
                 return metrics;
-            
-            case 'cricket_coaching':
-                const coachingMetrics = [];
-                if (item.duration_minutes) {
-                    coachingMetrics.push({ label: 'Session Length', value: `${item.duration_minutes} min` });
-                }
-                if (item.focus_level) {
-                    coachingMetrics.push({ label: 'Focus Level', value: `${item.focus_level}/10` });
-                }
-                if (item.confidence_level) {
-                    coachingMetrics.push({ label: 'Confidence', value: `${item.confidence_level}/10` });
-                }
-                if (item.self_assessment_score) {
-                    coachingMetrics.push({ label: 'Self Rating', value: `${item.self_assessment_score}/10` });
-                }
-                return coachingMetrics;
-            
-            case 'cricket_matches':
-                const matchMetrics = [];
-                if (item.runs_scored !== null && item.runs_scored !== undefined) {
-                    matchMetrics.push({ label: 'Runs Scored', value: `${item.runs_scored}` });
-                }
-                if (item.balls_faced !== null && item.balls_faced !== undefined) {
-                    matchMetrics.push({ label: 'Balls Faced', value: `${item.balls_faced}` });
-                }
+            }
+            case 'cricket_coaching': {
+                const m = [];
+                if (item.duration_minutes) m.push({ label: 'Duration', value: `${item.duration_minutes} min` });
+                if (item.confidence_level) m.push({ label: 'Confidence', value: `${item.confidence_level}/10` });
+                if (item.focus_level) m.push({ label: 'Focus', value: `${item.focus_level}/10` });
+                if (item.self_assessment_score) m.push({ label: 'Self Rating', value: `${item.self_assessment_score}/10` });
+                return m;
+            }
+            case 'cricket_match':
+            case 'cricket_matches': {
+                const m = [];
+                if (item.runs_scored != null) m.push({ label: 'Runs', value: `${item.runs_scored}` });
+                if (item.balls_faced != null) m.push({ label: 'Balls', value: `${item.balls_faced}` });
                 if (item.runs_scored && item.balls_faced) {
-                    const strikeRate = Math.round((item.runs_scored / item.balls_faced) * 100);
-                    matchMetrics.push({ label: 'Strike Rate', value: `${strikeRate}%` });
+                    const sr = Math.round((item.runs_scored / item.balls_faced) * 100);
+                    m.push({ label: 'Strike Rate', value: `${sr}%` });
                 }
-                if (item.opposition_strength) {
-                    matchMetrics.push({ label: 'Opposition', value: `${item.opposition_strength}/10` });
-                }
-                return matchMetrics;
-            
-            case 'rest_days':
-                const restMetrics = [];
-                if (item.energy_level) {
-                    restMetrics.push({ label: 'Energy Level', value: `${item.energy_level}/10` });
-                }
-                if (item.fatigue_level) {
-                    restMetrics.push({ label: 'Fatigue Level', value: `${item.fatigue_level}/10` });
-                }
-                if (item.motivation_level) {
-                    restMetrics.push({ label: 'Motivation', value: `${item.motivation_level}/10` });
-                }
-                if (item.rest_type) {
-                    const restTypeFormatted = item.rest_type.replace(/_/g, ' ').split(' ').map(word => 
-                        word.charAt(0).toUpperCase() + word.slice(1)
-                    ).join(' ');
-                    restMetrics.push({ label: 'Rest Type', value: restTypeFormatted });
-                }
-                return restMetrics;
-            
+                if (item.opposition_team) m.push({ label: 'Opposition', value: item.opposition_team });
+                return m;
+            }
+            case 'rest_day':
+            case 'rest_days': {
+                const m = [];
+                if (item.energy_level) m.push({ label: 'Energy', value: `${item.energy_level}/10` });
+                if (item.fatigue_level) m.push({ label: 'Fatigue', value: `${item.fatigue_level}/10` });
+                if (item.motivation_level) m.push({ label: 'Motivation', value: `${item.motivation_level}/10` });
+                return m;
+            }
             default:
                 return [];
         }
@@ -827,6 +1173,7 @@ class MobileDashboard {
                 if (item.self_assessment_score >= 8) return { icon: '⭐', text: 'Excellent session!' };
                 break;
             
+            case 'cricket_match':
             case 'cricket_matches':
                 const strikeRate = item.runs_scored && item.balls_faced ? 
                     (item.runs_scored / item.balls_faced) * 100 : 0;
@@ -835,6 +1182,7 @@ class MobileDashboard {
                 if (item.post_match_satisfaction >= 8) return { icon: '😊', text: 'Great match!' };
                 break;
             
+            case 'rest_day':
             case 'rest_days':
                 if (item.energy_level >= 8) return { icon: '🔋', text: 'Well rested!' };
                 if (item.motivation_level >= 8) return { icon: '🎯', text: 'Motivated!' };
@@ -843,18 +1191,34 @@ class MobileDashboard {
         return null;
     }
 
-    startActivityLogging(activityType) {
+    async startActivityLogging(activityType) {
         console.log(`🎤 Starting voice logging for: ${activityType}`);
+        
+        // Prevent multiple simultaneous calls
+        if (window.isCreatingConversation) {
+            console.log('⚠️ Voice logging already in progress, skipping...');
+            return;
+        }
         
         // Set global variable and open modal
         window.currentEntryType = activityType;
         if (typeof openVoiceModal === 'function') {
-            openVoiceModal(activityType);
+            try {
+                await openVoiceModal(activityType);
+            } catch (error) {
+                console.error('Failed to open voice modal:', error);
+                alert(`Failed to start voice logging: ${error.message}`);
+            }
         } else {
             // Direct modal opening if function not available yet
-            setTimeout(() => {
+            setTimeout(async () => {
                 if (typeof openVoiceModal === 'function') {
-                    openVoiceModal(activityType);
+                    try {
+                        await openVoiceModal(activityType);
+                    } catch (error) {
+                        console.error('Failed to open voice modal:', error);
+                        alert(`Failed to start voice logging: ${error.message}`);
+                    }
                 } else {
                     alert(`Voice logging for ${activityType} - please wait for page to fully load!`);
                 }
@@ -863,10 +1227,13 @@ class MobileDashboard {
     }
 
     switchTab(tabName) {
+        // First, destroy any existing charts to prevent animation errors
+        this.cleanupChartsOnTabSwitch();
+        
         // Remove active class from all tabs
         document.querySelectorAll('.nav-tab').forEach(tab => {
             tab.classList.remove('active');
-        });
+        }); 
         
         // Add active class to clicked tab
         const activeTab = document.querySelector(`[data-tab="${tabName}"]`);
@@ -878,19 +1245,43 @@ class MobileDashboard {
         this.showTabContent(tabName);
     }
 
-    showTabContent(tabName) {
+    /**
+     * Clean up Chart.js instances when switching tabs to prevent animation errors
+     */
+    cleanupChartsOnTabSwitch() {
+        try {
+            console.log('🧹 Starting comprehensive chart cleanup...');
+            
+            // Use the new chart system's cleanup method
+            if (window.analyticsCharts && typeof window.analyticsCharts.destroyAllCharts === 'function') {
+                window.analyticsCharts.destroyAllCharts();
+            }
+            
+            console.log('✅ Chart cleanup complete');
+            
+        } catch (error) {
+            console.warn('Error during chart cleanup:', error);
+        }
+    }
+
+    async showTabContent(tabName) {
         // Hide all tab content
         document.querySelectorAll('.tab-content').forEach(content => {
             content.classList.add('hidden');
         });
+
+        // Wait a brief moment for cleanup to complete
+        await new Promise(resolve => setTimeout(resolve, 100));
 
         // Show selected content
         const activeContent = document.getElementById(`${tabName}-tab`);
         if (activeContent) {
             activeContent.classList.remove('hidden');
             
-            // Load tab-specific data
-            this.loadTabData(tabName);
+            // Load tab-specific data with a slight delay
+            setTimeout(() => {
+                this.loadTabData(tabName);
+            }, 150);
         }
     }
 
@@ -909,9 +1300,43 @@ class MobileDashboard {
     }
 
     async loadAnalyticsData() {
-        // Implementation for analytics loading
-        console.log('📊 Loading analytics data...');
-        // This will be enhanced with chart visualization
+        try {
+            console.log('📊 Loading analytics data...');
+            
+            // Ensure charts are clean before loading
+            if (window.analyticsCharts && typeof window.analyticsCharts.clearAnalyticsSection === 'function') {
+                window.analyticsCharts.clearAnalyticsSection();
+            }
+            
+            // Wait for DOM to be ready
+            await new Promise(resolve => setTimeout(resolve, 200));
+            
+            // Determine which analytics to load based on current selection
+            const activeAnalyticsTab = document.querySelector('.analytics-nav .active');
+            const analyticsType = activeAnalyticsTab ? activeAnalyticsTab.dataset.analytics : 'fitness';
+            
+            // Load appropriate analytics
+            if (window.analyticsCharts) {
+                switch (analyticsType) {
+                    case 'fitness':
+                        await window.analyticsCharts.renderFitnessAnalytics();
+                        break;
+                    case 'cricket':
+                        await window.analyticsCharts.renderCricketAnalytics();
+                        break;
+                    case 'combined':
+                        await window.analyticsCharts.renderCombinedAnalytics();
+                        break;
+                    default:
+                        await window.analyticsCharts.renderFitnessAnalytics();
+                }
+            } else {
+                console.warn('Analytics charts not available yet');
+            }
+            
+        } catch (error) {
+            console.error('❌ Failed to load analytics:', error);
+        }
     }
 
     async loadEntriesData() {
@@ -936,6 +1361,8 @@ class MobileDashboard {
                 this.fetchEntries('cricket_match', 10),
                 this.fetchEntries('rest_day', 10)
             ]);
+
+            console.log("Processed results:", results);
 
             // Extract successful results
             const [fitnessResult, coachingResult, matchResult, restResult] = results;
@@ -978,6 +1405,9 @@ class MobileDashboard {
         }
     }
 
+  
+
+
     async fetchEntries(type, limit = 10) {
         try {
             const endpoints = {
@@ -987,13 +1417,35 @@ class MobileDashboard {
                 'rest_day': '/api/entries/rest-days'
             };
 
-            const response = await fetch(`${endpoints[type]}?limit=${limit}`);
+            const response = await fetch(`${endpoints[type]}?limit=${limit}`, {
+                headers: {
+                    'Authorization': `Bearer ${localStorage.getItem('token')}`
+                }
+            });
             if (!response.ok) {
                 throw new Error(`Failed to load ${type} entries: ${response.status} ${response.statusText}`);
             }
 
             const data = await response.json();
-            return data.data?.entries || [];
+            console.log("Raw response data:", data);
+            
+            // Handle new response format with transcriptions
+            if (data.entries && Array.isArray(data.entries)) {
+                // New format: entries are directly in data.entries
+                const entries = data.entries;
+                const transcriptions = data.transcriptions || [];
+                
+                // Merge transcriptions with entries (transcriptions is now list[list[str]])
+                return entries.map((entry, index) => ({
+                    ...entry,
+                    transcription: transcriptions[index] || []
+                }));
+            } else if (data.data?.entries) {
+                // Legacy format: entries are in data.data.entries
+                return data.data.entries || [];
+            } else {
+                return [];
+            }
         } catch (error) {
             console.error(`❌ Error fetching ${type} entries:`, error);
             return [];
@@ -1094,6 +1546,7 @@ class MobileDashboard {
             'fitness': '🏃',
             'cricket_coaching': '🏏',
             'cricket_match': '🏆',
+            'cricket_matches': '🏆',
             'rest_day': '😴'
         };
 
@@ -1104,6 +1557,11 @@ class MobileDashboard {
         // Get key metrics based on activity type
         const metrics = this.getActivityMetrics(entry);
         const highlight = this.getActivityHighlight(entry);
+        
+        // Show transcription if available - take the first message for preview
+        const transcriptionPreview = entry.transcription && entry.transcription.length > 0 
+            ? this.getTranscriptPreview(entry.transcription[0]) 
+            : '';
 
         return `
             <div class="entry-card ${entry.type}" onclick="window.mobileDashboard.showActivityDetails(${JSON.stringify(entry).replace(/"/g, '&quot;')})">
@@ -1115,10 +1573,19 @@ class MobileDashboard {
                         <div class="entry-title">${title}</div>
                         <div class="entry-time">${timeAgo}</div>
                     </div>
-                    <div class="entry-confidence">
-                        ${Math.round((entry.confidence_score || 0) * 100)}%
-                    </div>
                 </div>
+                
+                ${transcriptionPreview ? `
+                    <div class="entry-transcript-preview">
+                        <div class="transcript-preview-header">
+                            <span class="transcript-icon">🎤</span>
+                            <span class="transcript-label">What you said:</span>
+                        </div>
+                        <div class="transcript-preview-content">
+                            "${transcriptionPreview}"
+                        </div>
+                    </div>
+                ` : ''}
                 
                 ${metrics.length > 0 ? `
                     <div class="entry-metrics">
@@ -1149,74 +1616,48 @@ class MobileDashboard {
     }
 
     formatFitnessTitle(entry) {
-        const type = (entry.fitness_type || 'fitness').replace(/_/g, ' ');
-        return `${type.charAt(0).toUpperCase() + type.slice(1)} Session`;
+        // Prefer specific exercise name, otherwise fall back to exercise_type or generic label
+        const name = entry.exercise_name || entry.exercise_type || entry.fitness_type || 'Fitness';
+        const formatted = name.toString().replace(/_/g, ' ');
+        return `${formatted.charAt(0).toUpperCase() + formatted.slice(1)} Session`;
     }
 
     formatCoachingTitle(entry) {
-        const type = (entry.session_type || 'cricket').replace(/_/g, ' ');
+        const type = (entry.session_type || 'Cricket').toString().replace(/_/g, ' ');
         return `${type.charAt(0).toUpperCase() + type.slice(1)} Practice`;
     }
 
     formatMatchTitle(entry) {
-        const type = (entry.match_type || 'match').charAt(0).toUpperCase() + (entry.match_type || 'match').slice(1);
-        return `${type} Performance`;
+        const fmt = (entry.match_format || entry.match_type || 'Match').toString().replace(/_/g, ' ');
+        return `${fmt.charAt(0).toUpperCase() + fmt.slice(1)} Performance`;
     }
 
     formatRestDayTitle(entry) {
-        const type = (entry.rest_type || 'rest').replace(/_/g, ' ');
+        const type = (entry.rest_type || 'Rest').toString().replace(/_/g, ' ');
         return `${type.charAt(0).toUpperCase() + type.slice(1)} Day`;
-    }
-
-    getMainInfo(entry) {
-        switch (entry.type) {
-            case 'fitness':
-                return [
-                    { label: 'Duration', value: `${entry.duration_minutes || 0}min` },
-                    { label: 'Intensity', value: entry.intensity || 'N/A' },
-                    { label: 'Energy', value: `${entry.energy_level || 0}/5` },
-                    { label: 'Distance', value: entry.distance_km ? `${entry.distance_km}km` : 'N/A' }
-                ];
-            
-            case 'cricket_coaching':
-                return [
-                    { label: 'Duration', value: `${entry.duration_minutes || 0}min` },
-                    { label: 'Confidence', value: `${entry.confidence_level || 0}/10` },
-                    { label: 'Focus', value: `${entry.focus_level || 0}/10` },
-                    { label: 'Self Rating', value: `${entry.self_assessment_score || 0}/10` }
-                ];
-            
-            case 'cricket_match':
-                return [
-                    { label: 'Runs', value: entry.runs_scored !== null ? entry.runs_scored : 'N/A' },
-                    { label: 'Balls', value: entry.balls_faced !== null ? entry.balls_faced : 'N/A' },
-                    { label: 'Opposition', value: `${entry.opposition_strength || 0}/10` },
-                    { label: 'Satisfaction', value: `${entry.post_match_satisfaction || 0}/10` }
-                ];
-            
-            case 'rest_day':
-                return [
-                    { label: 'Energy', value: `${entry.energy_level || 0}/10` },
-                    { label: 'Fatigue', value: `${entry.fatigue_level || 0}/10` },
-                    { label: 'Motivation', value: `${entry.motivation_level || 0}/10` },
-                    { label: 'Soreness', value: entry.soreness_level ? `${entry.soreness_level}/10` : 'N/A' }
-                ];
-            
-            default:
-                return [];
-        }
     }
 
     getEntryDescription(entry) {
         switch (entry.type) {
             case 'fitness':
-                return entry.details || entry.transcript?.substring(0, 100) || '';
+                return entry.details || entry.notes || entry.transcript?.substring(0, 100) || '';
             case 'cricket_coaching':
-                return entry.what_went_well || entry.transcript?.substring(0, 100) || '';
+                return entry.what_went_well || entry.notes || entry.transcript?.substring(0, 100) || '';
             case 'cricket_match':
-                return entry.key_shots_played || entry.transcript?.substring(0, 100) || '';
+            case 'cricket_matches':
+                return (
+                    entry.key_moments?.join(', ') ||
+                    entry.key_shots_played ||
+                    entry.notes ||
+                    entry.transcript?.substring(0, 100) || ''
+                );
             case 'rest_day':
-                return entry.mood_description || entry.physical_state || entry.transcript?.substring(0, 100) || '';
+                return (
+                    entry.mood_description ||
+                    entry.physical_state ||
+                    entry.notes ||
+                    entry.transcript?.substring(0, 100) || ''
+                );
             default:
                 return '';
         }
@@ -1224,42 +1665,43 @@ class MobileDashboard {
 
     getEntryTags(entry) {
         const tags = [];
-        
+
         // Mental state tag
         if (entry.mental_state) {
             tags.push({ text: entry.mental_state, class: 'mental-state' });
         }
-        
-        // Type-specific tags
+
         switch (entry.type) {
             case 'fitness':
-                if (entry.duration_minutes) {
-                    tags.push({ text: `${entry.duration_minutes}min`, class: 'duration' });
+                if (entry.exercise_type) {
+                    tags.push({ text: entry.exercise_type.replace(/_/g, ' '), class: 'exercise-type' });
                 }
                 if (entry.intensity) {
                     tags.push({ text: entry.intensity, class: 'intensity' });
                 }
                 break;
-                
+
             case 'cricket_coaching':
                 if (entry.session_type) {
                     tags.push({ text: entry.session_type.replace(/_/g, ' '), class: 'session-type' });
                 }
                 break;
-                
+
             case 'cricket_match':
-                if (entry.match_type) {
-                    tags.push({ text: entry.match_type, class: 'match-type' });
+            case 'cricket_matches':
+                if (entry.match_format || entry.match_type) {
+                    const label = (entry.match_format || entry.match_type).toString().replace(/_/g, ' ');
+                    tags.push({ text: label, class: 'match-format' });
                 }
                 break;
-                
+
             case 'rest_day':
                 if (entry.rest_type) {
                     tags.push({ text: entry.rest_type.replace(/_/g, ' '), class: 'rest-type' });
                 }
                 break;
         }
-        
+
         return tags;
     }
 
@@ -1318,17 +1760,19 @@ class MobileDashboard {
         }
         
         // Apply search filter
+        console.log("filteredEntries", filteredEntries);
+        console.log("this.currentSearchTerm", this.currentSearchTerm);
         if (this.currentSearchTerm) {
             filteredEntries = filteredEntries.filter(entry => {
                 const searchableText = [
-                    entry.transcript || '',
+                    Array.isArray(entry.transcription) ? entry.transcription.join(' ') : entry.transcription || '',
                     entry.details || '',
                     entry.what_went_well || '',
                     entry.key_shots_played || '',
                     entry.mood_description || '',
                     entry.physical_state || '',
                     entry.mental_state || '',
-                    entry.fitness_type || '',
+                    entry.activity_type || '',
                     entry.session_type || '',
                     entry.match_type || '',
                     entry.rest_type || '',
@@ -1535,6 +1979,58 @@ class MobileDashboard {
         if (modal) {
             modal.style.display = 'none';
             document.body.style.overflow = 'auto';
+        }
+    }
+
+    getTranscriptPreview(transcript) {
+        if (!transcript || transcript.length === 0) return '';
+        
+        // Truncate to 100 characters and add ellipsis if longer
+        const maxLength = 100;
+        if (transcript.length <= maxLength) {
+            return transcript;
+        }
+        
+        return transcript.substring(0, maxLength) + '...';
+    }
+
+    getMainInfo(entry) {
+        switch (entry.type) {
+            case 'fitness':
+                return [
+                    { label: 'Duration', value: `${entry.duration_minutes || 0}min` },
+                    { label: 'Intensity', value: entry.intensity || 'N/A' },
+                    { label: 'Energy', value: entry.energy_level != null ? `${entry.energy_level}/10` : 'N/A' },
+                    { label: 'Distance', value: entry.distance_km != null ? `${entry.distance_km}km` : 'N/A' }
+                ];
+
+            case 'cricket_coaching':
+                return [
+                    { label: 'Duration', value: `${entry.duration_minutes || 0}min` },
+                    { label: 'Confidence', value: entry.confidence_level != null ? `${entry.confidence_level}/10` : 'N/A' },
+                    { label: 'Focus', value: entry.focus_level != null ? `${entry.focus_level}/10` : 'N/A' },
+                    { label: 'Self Rating', value: entry.self_assessment_score != null ? `${entry.self_assessment_score}/10` : 'N/A' }
+                ];
+
+            case 'cricket_match':
+            case 'cricket_matches':
+                return [
+                    { label: 'Runs', value: entry.runs_scored != null ? entry.runs_scored : 'N/A' },
+                    { label: 'Balls', value: entry.balls_faced != null ? entry.balls_faced : 'N/A' },
+                    { label: 'Strike Rate', value: (entry.runs_scored && entry.balls_faced) ? `${Math.round((entry.runs_scored/entry.balls_faced)*100)}%` : 'N/A' },
+                    { label: 'Opposition', value: entry.opposition_team || 'N/A' }
+                ];
+
+            case 'rest_day':
+                return [
+                    { label: 'Energy', value: entry.energy_level != null ? `${entry.energy_level}/10` : 'N/A' },
+                    { label: 'Fatigue', value: entry.fatigue_level != null ? `${entry.fatigue_level}/10` : 'N/A' },
+                    { label: 'Motivation', value: entry.motivation_level != null ? `${entry.motivation_level}/10` : 'N/A' },
+                    { label: 'Rest Type', value: entry.rest_type ? entry.rest_type.replace(/_/g, ' ') : 'N/A' }
+                ];
+
+            default:
+                return [];
         }
     }
 }

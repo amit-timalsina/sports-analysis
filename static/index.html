@@ -9,6 +9,7 @@
     
     <!-- PWA Meta Tags -->
     <link rel="manifest" href="/static/manifest.json">
+    <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <meta name="apple-mobile-web-app-title" content="Cricket Tracker">
@@ -73,15 +74,7 @@
                     <!-- Stats will be populated by JavaScript -->
                     <div class="stat-item">
                         <span class="stat-value">-</span>
-                        <div class="stat-label">Fitness sessions</div>
-                    </div>
-                    <div class="stat-item">
-                        <span class="stat-value">-</span>
-                        <div class="stat-label">Cricket sessions</div>
-                    </div>
-                    <div class="stat-item">
-                        <span class="stat-value">-</span>
-                        <div class="stat-label">Energy level</div>
+                        <div class="stat-label">This period</div>
                     </div>
                     <div class="stat-item">
                         <span class="stat-value">-</span>
@@ -343,12 +336,66 @@
         let isRecording = false;
         let mediaRecorder = null;
         let audioStream = null;
-        let currentSessionId = 'session_' + Date.now();
+        let currentSessionId = crypto.randomUUID();
         // Turn counter for conversation flow visualization
         let flowTurn = 0;
+        // Flag to prevent multiple conversation creations
+        let isCreatingConversation = false;
+        // Make it globally accessible
+        window.isCreatingConversation = isCreatingConversation;
+
+        // Helper function to map entry types to ActivityType enum values
+        function mapEntryTypeToActivityType(entryType) {
+            const mapping = {
+                'fitness': 'FITNESS',
+                'cricket_coaching': 'CRICKET_COACHING',
+                'cricket_match': 'CRICKET_MATCH',
+                'rest_day': 'REST_DAY'
+            };
+            return mapping[entryType] || 'FITNESS';
+        }
+
+        // Function to create a new conversation
+        async function createConversation() {
+            const token = localStorage.getItem("token");
+            const activityType = mapEntryTypeToActivityType(currentEntryType);
+            
+            try {
+                console.log(`📤 Creating conversation for activity type: ${activityType}`);
+                const response = await fetch('/api/conversations', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`,
+                    },
+                    body: JSON.stringify({
+                        activity_type: activityType,
+                        chat_messages: []
+                    })
+                });
+
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(`Failed to create conversation: ${response.status} - ${errorText}`);
+                }
+
+                const conversation = await response.json();
+                console.log('✅ Conversation created:', conversation);
+                return conversation;
+            } catch (error) {
+                console.error('❌ Failed to create conversation:', error);
+                throw error;
+            }
+        }
 
         // Voice modal functions
-        function openVoiceModal(entryType) {
+        async function openVoiceModal(entryType) {
+            // Prevent multiple simultaneous calls
+            if (isCreatingConversation || window.isCreatingConversation) {
+                console.log('⚠️ Conversation creation already in progress, skipping...');
+                return;
+            }
+            
             currentEntryType = entryType;
             const modal = document.getElementById('voice-modal');
             const title = document.getElementById('voice-title');
@@ -371,11 +418,66 @@
             title.textContent = titles[entryType] || '🎤 Voice Recording';
             description.textContent = descriptions[entryType] || 'Speak naturally about your activity';
             
+            // Reset conversation state for new activity type
+            resetConversationState();
+            
             modal.classList.remove('hidden');
             
             // Connect WebSocket if not already connected
             if (!socket || socket.readyState !== WebSocket.OPEN) {
-                connectWebSocket();
+                try {
+                    isCreatingConversation = true;
+                    window.isCreatingConversation = true;
+                    console.log('🔄 Creating new conversation...');
+                    // Show loading state in modal
+                    updateStatus('🔄 Creating conversation session...', 'info');
+                    // create conversation to get session_id as conversation.id.
+                    const conversation = await createConversation();
+                    if (!conversation || !conversation.id) {
+                        console.error('❌ Conversation creation failed or returned null:', conversation);
+                        updateStatus('❌ Failed to create conversation. Please try again.', 'error');
+                        isCreatingConversation = false;
+                        window.isCreatingConversation = false;
+                        modal.classList.add('hidden');
+                        return;
+                    }
+                    currentSessionId = conversation.id;
+                    connectWebSocket(currentSessionId);
+                    console.log('✅ Conversation created successfully:', currentSessionId);
+                    // Update status to show ready state
+                    updateStatus('✅ Ready to record! Click microphone to start', 'success');
+                } catch (error) {
+                    console.error('❌ Failed to create conversation:', error);
+                    // Close modal on error
+                    modal.classList.add('hidden');
+                    alert(`Failed to start voice logging: ${error.message}`);
+                } finally {
+                    isCreatingConversation = false;
+                    window.isCreatingConversation = false;
+                }
+            } else {
+                // WebSocket already connected, just update status
+                updateStatus('✅ Ready to record! Click microphone to start', 'success');
+            }
+            
+            // Send metadata immediately to prepare backend for new activity type
+            setTimeout(() => {
+                sendSessionMetadata();
+            }, 500);
+        }
+
+        /**
+         * Send session metadata to backend to prepare for new activity type
+         */
+        function sendSessionMetadata() {
+            if (socket && socket.readyState === WebSocket.OPEN) {
+                console.log(`📤 Sending session metadata for activity type: ${currentEntryType}`);
+                socket.send(JSON.stringify({
+                    type: 'voice_data_meta',
+                    entry_type: currentEntryType
+                }));
+            } else {
+                console.warn('⚠️ WebSocket not ready, will send metadata when recording starts');
             }
         }
 
@@ -392,19 +494,96 @@
             resetVoiceUI();
         }
 
-        function resetVoiceUI() {
-            document.getElementById('status-message').textContent = 'Click the microphone to start recording';
-            document.getElementById('status-message').className = 'status info';
-            document.getElementById('transcript-display').classList.add('hidden');
-            document.getElementById('processed-data').classList.add('hidden');
-            document.getElementById('record-btn').classList.remove('recording');
-            document.getElementById('record-btn').textContent = '🎤';
+        /**
+         * Reset conversation state when switching activity types or opening modal
+         */
+        function resetConversationState() {
+            console.log('🔄 Resetting conversation state for new activity type');
+            
+            // Reset conversation turn counter
+            flowTurn = 0;
+            
+            // Clear conversation flow UI if it exists
+            const flowContainer = document.getElementById('conversation-flow');
+            if (flowContainer) {
+                flowContainer.remove();
+            }
+            
+            // Clear any existing transcript display
+            const transcriptDisplay = document.getElementById('transcript-display');
+            if (transcriptDisplay) {
+                transcriptDisplay.classList.add('hidden');
+                transcriptDisplay.innerHTML = '';
+            }
+            
+            // Clear processed data display
+            const processedData = document.getElementById('processed-data');
+            if (processedData) {
+                processedData.classList.add('hidden');
+                processedData.innerHTML = '';
+            }
+            
+            // Clear collected data display if it exists
+            const collectedDataEl = document.getElementById('collected-data-display');
+            if (collectedDataEl) {
+                collectedDataEl.classList.add('hidden');
+                collectedDataEl.innerHTML = '';
+            }
+            
+            // Reset status message to initial state
+            updateStatus('Click the microphone to start recording', 'info');
+            
+            // Reset recording UI state
+            resetVoiceUI();
+            
+            console.log('✅ Conversation state reset complete');
         }
 
-        function connectWebSocket() {
-            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            const wsUrl = `${protocol}//${window.location.host}/ws/voice/${currentSessionId}`;
+        function resetVoiceUI() {
+            const statusMessage = document.getElementById('status-message');
+            const transcriptDisplay = document.getElementById('transcript-display');
+            const processedData = document.getElementById('processed-data');
+            const recordBtn = document.getElementById('record-btn');
+            const doneBtn = document.getElementById('done-btn');
             
+            if (statusMessage) {
+                statusMessage.textContent = 'Click the microphone to start recording';
+                statusMessage.className = 'status info';
+            }
+            
+            if (transcriptDisplay) {
+                transcriptDisplay.classList.add('hidden');
+            }
+            
+            if (processedData) {
+                processedData.classList.add('hidden');
+            }
+            
+            if (recordBtn) {
+                recordBtn.classList.remove('recording');
+                const btnIcon = recordBtn.querySelector('.btn-icon');
+                const btnText = recordBtn.querySelector('.btn-text');
+                if (btnIcon) btnIcon.textContent = '🎤';
+                if (btnText) btnText.textContent = 'Start Recording';
+            }
+            
+            if (doneBtn) {
+                doneBtn.style.display = 'none';
+            }
+        }
+
+        function connectWebSocket(sessionId) {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const token = localStorage.getItem("token");
+            
+            if (!token) {
+                console.error('❌ No authentication token found in localStorage');
+                updateStatus('❌ Authentication token missing. Please log in again.', 'error');
+                return;
+            }
+            
+            const wsUrl = `${protocol}//${window.location.host}/api/voice_ws/ws/${sessionId}?token=${encodeURIComponent(token)}`;
+
             socket = new WebSocket(wsUrl);
             
             socket.onopen = function() {
@@ -416,12 +595,19 @@
                 handleWebSocketMessage(data);
             };
             
-            socket.onclose = function() {
-                updateStatus('Connection closed', 'info');
+            socket.onclose = function(event) {
+                if (event.code === 4001) {
+                    updateStatus('❌ Authentication failed. Please check your login.', 'error');
+                    console.error('WebSocket closed due to authentication failure');
+                } else {
+                    updateStatus('Connection closed', 'info');
+                    console.log('WebSocket closed with code:', event.code, 'reason:', event.reason);
+                }
             };
             
-            socket.onerror = function() {
-                updateStatus('Connection error', 'error');
+            socket.onerror = function(error) {
+                updateStatus('❌ Connection error. Please try again.', 'error');
+                console.error('WebSocket error:', error);
             };
         }
 
@@ -434,7 +620,10 @@
                     break;
                     
                 case 'voice_meta_received':
-                    updateStatus('Ready to record audio...', 'info');
+                    const activityType = data.data?.entry_type || 'activity';
+                    const formattedType = activityType.replace('_', ' ');
+                    updateStatus(`Ready to record ${formattedType} session...`, 'info');
+                    console.log(`✅ Backend ready for ${activityType} logging`);
                     break;
                     
                 case 'audio_chunk_received':
@@ -492,28 +681,36 @@
             addConversationTurn(questionData.turn_number, questionData.question, 'question');
             
             // Update status with question
-            updateStatus(`❓ Follow-up Question ${questionData.turn_number + 1}`, 'info');
+            updateStatus(`❓ Follow-up Question ${questionData.turn_number}`, 'info');
             
             // Show the question prominently in the UI with enhanced styling
             const statusEl = document.getElementById('status-message');
+            
+            // Format field targets for display
+            const fieldTargets = questionData.field_targets || [];
+            const fieldDisplay = fieldTargets.length > 0 
+                ? fieldTargets.map(field => field.replace('_', ' ')).join(', ')
+                : 'additional information';
+            
             statusEl.innerHTML = `
                 <div class="conversation-question">
                     <div class="question-header">
                         <span class="question-icon">🤖</span>
-                        <strong>Follow-up Question ${questionData.turn_number + 1}</strong>
+                        <strong>Follow-up Question ${questionData.turn_number}</strong>
                         <span class="progress-badge">${Math.round(questionData.completeness_score * 100)}% complete</span>
+                        <span class="question-type-badge">${questionData.is_rule_based ? 'Rule-based' : 'AI-generated'}</span>
                     </div>
                     <div class="question-text">"${questionData.question}"</div>
                     <div class="question-footer">
-                        <span class="collecting-field">Collecting: ${questionData.field_target.replace('_', ' ')}</span>
-                        <span class="instruction-text">${questionData.instructions}</span>
+                        <span class="collecting-field">Collecting: ${fieldDisplay}</span>
+                        <span class="field-count">${fieldTargets.length} field${fieldTargets.length !== 1 ? 's' : ''}</span>
                     </div>
                 </div>
             `;
             statusEl.className = 'status info conversation-status';
             
             // Show collected data so far with enhanced visualization
-            if (Object.keys(questionData.collected_data).length > 0) {
+            if (questionData.collected_data && Object.keys(questionData.collected_data).length > 0) {
                 showCollectedData(questionData.collected_data, questionData.turn_number);
             }
             
@@ -865,12 +1062,12 @@
                 // Show recording visualizer
                 updateRecordingVisualization(true);
                 
-                // Send metadata first
+                // Ensure backend has current session metadata before recording
                 if (socket && socket.readyState === WebSocket.OPEN) {
+                    console.log('📤 Ensuring backend has current session metadata before recording');
                     socket.send(JSON.stringify({
                         type: 'voice_data_meta',
-                        entry_type: currentEntryType,
-                        user_id: 'demo_user'
+                        entry_type: currentEntryType
                     }));
                 }
 
@@ -950,23 +1147,58 @@
 
         // Analytics Chart Functions
         function showChartsLoading() {
-            const loadingEl = document.getElementById('charts-loading');
-            if (loadingEl) {
-                loadingEl.classList.remove('hidden');
+            // Use the chart class loading indicator if available
+            if (window.analyticsCharts && typeof window.analyticsCharts.showLoadingIndicator === 'function') {
+                window.analyticsCharts.showLoadingIndicator();
+            } else {
+                // Fallback to global loading indicator
+                const loadingEl = document.getElementById('charts-loading');
+                if (loadingEl) {
+                    loadingEl.classList.remove('hidden');
+                }
             }
         }
         
         function hideChartsLoading() {
-            const loadingEl = document.getElementById('charts-loading');
-            if (loadingEl) {
-                loadingEl.classList.add('hidden');
+            // Use the chart class loading indicator if available
+            if (window.analyticsCharts && typeof window.analyticsCharts.hideLoadingIndicator === 'function') {
+                window.analyticsCharts.hideLoadingIndicator();
+            } else {
+                // Fallback to global loading indicator
+                const loadingEl = document.getElementById('charts-loading');
+                if (loadingEl) {
+                    loadingEl.classList.add('hidden');
+                }
             }
         }
 
         // API Request Helper Function
+        // async function apiRequest(endpoint) {
+        //     try {
+        //         const response = await fetch(endpoint);
+        //         const data = await response.json();
+        //         return JSON.stringify(data, null, 2);
+        //     } catch (error) {
+        //         return `Error: ${error.message}`;
+        //     }
+        // }
         async function apiRequest(endpoint) {
+            const token = localStorage.getItem("token");  // ⬅️ get token from localStorage
+
             try {
-                const response = await fetch(endpoint);
+                const response = await fetch(endpoint, {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`,  // ⬅️ send token in header
+                    },
+                });
+
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    return `Error ${response.status}: ${errorText}`;
+                }
+
                 const data = await response.json();
                 return JSON.stringify(data, null, 2);
             } catch (error) {
@@ -974,13 +1206,13 @@
             }
         }
 
+
         async function loadFitnessCharts() {
             const btn = event.target;
             const originalText = btn.innerHTML;
             
             btn.innerHTML = '<span class="loading"></span> Loading...';
             btn.disabled = true;
-            showChartsLoading();
             
             try {
                 if (window.analyticsCharts) {
@@ -989,7 +1221,6 @@
             } catch (error) {
                 console.error('Failed to load fitness charts:', error);
             } finally {
-                hideChartsLoading();
                 btn.innerHTML = originalText;
                 btn.disabled = false;
             }
@@ -1001,7 +1232,6 @@
             
             btn.innerHTML = '<span class="loading"></span> Loading...';
             btn.disabled = true;
-            showChartsLoading();
             
             try {
                 if (window.analyticsCharts) {
@@ -1010,7 +1240,6 @@
             } catch (error) {
                 console.error('Failed to load cricket charts:', error);
             } finally {
-                hideChartsLoading();
                 btn.innerHTML = originalText;
                 btn.disabled = false;
             }
@@ -1022,7 +1251,6 @@
             
             btn.innerHTML = '<span class="loading"></span> Loading...';
             btn.disabled = true;
-            showChartsLoading();
             
             try {
                 if (window.analyticsCharts) {
@@ -1031,7 +1259,6 @@
             } catch (error) {
                 console.error('Failed to load combined charts:', error);
             } finally {
-                hideChartsLoading();
                 btn.innerHTML = originalText;
                 btn.disabled = false;
             }
@@ -1045,7 +1272,8 @@
             btn.disabled = true;
             
             responseEl.classList.remove('hidden');
-            responseEl.textContent = await apiRequest('/api/entries/fitness');
+            
+            responseEl.textContent = await apiRequest('/api/entries/fitness',);
             
             btn.innerHTML = '🏃 Load Fitness Entries';
             btn.disabled = false;
@@ -1098,15 +1326,12 @@
         
         // Auto-load fitness charts when analytics tab opens
         async function loadFitnessChartsAuto() {
-            showChartsLoading();
             try {
                 if (window.analyticsCharts) {
                     await window.analyticsCharts.renderFitnessAnalytics();
                 }
             } catch (error) {
                 console.error('Failed to auto-load fitness charts:', error);
-            } finally {
-                hideChartsLoading();
             }
         }
 
@@ -1114,14 +1339,6 @@
         document.addEventListener('DOMContentLoaded', function() {
             const recordBtn = document.getElementById('record-btn');
             recordBtn.addEventListener('click', toggleRecording);
-
-            // Tab navigation
-            document.querySelectorAll('.nav-tab').forEach(tab => {
-                tab.addEventListener('click', function() {
-                    const tabName = this.dataset.tab;
-                    showTab(tabName);
-                });
-            });
 
             // Initialize Mobile Dashboard
             if (typeof MobileDashboard !== 'undefined') {

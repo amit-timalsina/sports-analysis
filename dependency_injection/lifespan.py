@@ -1,4 +1,3 @@
-import logging
 from collections.abc import AsyncGenerator
 
 import svcs
@@ -8,15 +7,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from auth.repositories.user_repository import UserRepository
 from auth.services.supabase import AuthSupabaseService
 from database.session import get_session
+from fitness_tracking.repositories.cricket_coaching_repository import CricketCoachingEntryRepository
+from fitness_tracking.repositories.fitness_repository import FitnessEntryRepository
+from logger import get_logger
+from voice_processing.repositories.chat_message_repository import ChatMessageRepository
 from voice_processing.repositories.conversation_repository import (
-    ConversationAnalyticsRepository,
-    ConversationMessageRepository,
     ConversationRepository,
-    ConversationTurnRepository,
-    QuestionContextRepository,
 )
+from voice_processing.services.ai_service import AIService
+from voice_processing.services.openai_service import OpenAIService
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 async def lifespan(_: FastAPI, registry: svcs.Registry) -> AsyncGenerator[None, None]:
@@ -39,20 +40,18 @@ async def lifespan(_: FastAPI, registry: svcs.Registry) -> AsyncGenerator[None, 
     registry.register_factory(UserRepository, UserRepository.get_as_dependency)
     registry.register_factory(ConversationRepository, ConversationRepository.get_as_dependency)
     registry.register_factory(
-        ConversationMessageRepository,
-        ConversationMessageRepository.get_as_dependency,
+        ChatMessageRepository,
+        ChatMessageRepository.get_as_dependency,
+    )
+    registry.register_factory(OpenAIService, OpenAIService.get_as_dependency)
+    registry.register_factory(AIService, AIService.get_as_dependency)
+    registry.register_factory(
+        CricketCoachingEntryRepository,
+        CricketCoachingEntryRepository.get_as_dependency,
     )
     registry.register_factory(
-        ConversationTurnRepository,
-        ConversationTurnRepository.get_as_dependency,
-    )
-    registry.register_factory(
-        ConversationAnalyticsRepository,
-        ConversationAnalyticsRepository.get_as_dependency,
-    )
-    registry.register_factory(
-        QuestionContextRepository,
-        QuestionContextRepository.get_as_dependency,
+        FitnessEntryRepository,
+        FitnessEntryRepository.get_as_dependency,
     )
     yield
     # Teardown Resources

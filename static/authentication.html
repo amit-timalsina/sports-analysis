@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login</title>
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <script src="https://unpkg.com/htmx.org/dist/ext/json-enc.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 flex items-center justify-center min-h-screen">
+    <div class="bg-white p-8 rounded-lg shadow-lg max-w-md w-full">
+        <h2 class="text-2xl font-bold text-center text-gray-800 mb-6">Login</h2>
+        <form id="login-form" 
+              hx-post="/api/login" 
+              hx-target="#message" 
+              hx-swap="innerHTML"
+              hx-ext="json-enc"
+              class="space-y-4">
+            <div>
+                <label for="email" class="block text-sm font-medium text-gray-700">Email</label>
+                <input type="email" id="email" name="email" required
+                       class="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+            <div>
+                <label for="password" class="block text-sm font-medium text-gray-700">Password</label>
+                <input type="password" id="password" name="password" required
+                       class="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+            <button type="submit" 
+                    class="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                Login
+            </button>
+        </form>
+        <div id="message" class="mt-4 text-center"></div>
+    </div>
+
+    <script>
+        // Add Authorization header with access_token to all HTMX requests
+        document.body.addEventListener('htmx:configRequest', function (event) {
+            // Retrieve access_token from localStorage
+            const token = localStorage.getItem('access_token');
+            if (token) {
+                // Attach token as Bearer in Authorization header for HTMX requests
+                event.detail.headers['Authorization'] = `Bearer ${token}`;
+            }
+        });
+
+
+        // Handle response from /api/login
+        document.body.addEventListener('htmx:afterRequest', function (event) {
+            if (event.target.id === 'login-form') {
+                const xhr = event.detail.xhr;
+                if (xhr.status === 200) {
+                    try {
+                        // Parse the /api/login response (e.g., { "access_token": "<token>", "redirect": "/email" })
+                        const response = JSON.parse(xhr.responseText);
+                        // Check if access_token is present in the response
+                        if (response.access_token) {
+                            // Store access_token in localStorage for future requests
+                            // Store under both 'access_token' and 'token' for compatibility with dashboard.js
+                            localStorage.setItem('access_token', response.access_token);
+                            localStorage.setItem('token', response.access_token); // For dashboard.js compatibility
+                            // Redirect to /home (main dashboard) after successful login
+                            window.location.href = '/home';
+                        }
+                    } catch (err) {
+                        // Handle parsing errors in the response
+                        document.getElementById('message').innerHTML =
+                            `<p class="text-red-600">Login succeeded, but response is invalid</p>`;
+                    }
+                } else {
+                    // Display error message if login fails (e.g., 401 Unauthorized)
+                    const error = JSON.parse(xhr.responseText).detail || "Login failed";
+                    document.getElementById('message').innerHTML =
+                        `<p class="text-red-600">${error}</p>`;
+                }
+            }
+        });
+
+        // Handle /email page load to ensure Authorization header is sent
+        window.addEventListener('load', function () {
+            if (window.location.pathname === '/email') {
+                // Retrieve access_token from localStorage
+                const token = localStorage.getItem('access_token');
+                if (token) {
+                    // Use access_token to fetch /email with Authorization header
+                    fetch('/email', {
+                        headers: { 'Authorization': `Bearer ${token}` }
+                    }).then(response => {
+                        if (response.ok) return response.text();
+                        throw new Error('Unauthorized');
+                    }).then(html => {
+                        // Replace entire page with /email response to display user email
+                        document.documentElement.innerHTML = html;
+                    }).catch(() => {
+                        // Redirect to login page if fetch fails (e.g., invalid token)
+                        window.location.href = '/';
+                    });
+                } else {
+                    // Redirect to login page if no token is found
+                    window.location.href = '/';
+                }
+            }
+        });
+    </script>
+</body>
+</html>

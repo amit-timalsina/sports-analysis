@@ -587,9 +587,10 @@ body {
 /* Quick stats enhancement */
 .quick-stats {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
     gap: var(--spacing-md);
     margin-bottom: var(--spacing-lg);
+    justify-items: center;
 }
 
 .stat-item {
@@ -734,7 +735,10 @@ body {
     }
     
     .quick-stats {
-        grid-template-columns: repeat(4, 1fr);
+        grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+        max-width: 200;
+        margin-left: auto;
+        margin-right: auto;
     }
     
     .nav-tab {
@@ -1982,5 +1986,84 @@ body {
     
     .detail-grid {
         grid-template-columns: 1fr;
+    }
+}
+
+.question-type-badge {
+    background: var(--primary-color);
+    color: white;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    margin-left: var(--spacing-sm);
+}
+
+/* JSON Display Styles */
+.json-container {
+    margin-top: var(--spacing-md);
+    background: #f8f9fa;
+    border: 1px solid var(--border-light);
+    border-radius: var(--border-radius-sm);
+    overflow: hidden;
+}
+
+.json-display {
+    background: #f8f9fa;
+    color: #2d3748;
+    font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
+    font-size: 0.8rem;
+    line-height: 1.4;
+    padding: var(--spacing-md);
+    margin: 0;
+    overflow-x: auto;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    max-height: 300px;
+    overflow-y: auto;
+    border: none;
+}
+
+.json-display::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+.json-display::-webkit-scrollbar-track {
+    background: #e2e8f0;
+    border-radius: 4px;
+}
+
+.json-display::-webkit-scrollbar-thumb {
+    background: #cbd5e0;
+    border-radius: 4px;
+}
+
+.json-display::-webkit-scrollbar-thumb:hover {
+    background: #a0aec0;
+}
+
+/* Dark mode support for JSON */
+@media (prefers-color-scheme: dark) {
+    .json-container {
+        background: #2d3748;
+        border-color: #4a5568;
+    }
+    
+    .json-display {
+        background: #2d3748;
+        color: #e2e8f0;
+    }
+    
+    .json-display::-webkit-scrollbar-track {
+        background: #4a5568;
+    }
+    
+    .json-display::-webkit-scrollbar-thumb {
+        background: #718096;
+    }
+    
+    .json-display::-webkit-scrollbar-thumb:hover {
+        background: #a0aec0;
     }
 } 

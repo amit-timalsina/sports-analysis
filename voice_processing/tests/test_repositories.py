@@ -16,17 +16,12 @@ from voice_processing.models.conversation import (
 )
 from voice_processing.repositories import (
     ConversationAnalyticsRepository,
-    ConversationMessageRepository,
     ConversationRepository,
     ConversationTurnRepository,
     QuestionContextRepository,
 )
-from voice_processing.schemas.conversation import (
-    ConversationAnalyticsRead,
-    ConversationMessageRead,
-    ConversationRead,
-    ConversationTurnRead,
-    QuestionContextRead,
+from voice_processing.repositories.chat_message_repository import (
+    ConversationMessageRepository,
 )
 from voice_processing.schemas.conversation_detail_enums import (
     ActivityType,
@@ -35,6 +30,13 @@ from voice_processing.schemas.conversation_detail_enums import (
     QuestionType,
 )
 from voice_processing.schemas.conversation_enums import ConversationState, ResolutionStatus
+from voice_processing.schemas.conversation_old import (
+    ConversationAnalyticsRead,
+    ConversationMessageRead,
+    ConversationRead,
+    ConversationTurnRead,
+    QuestionContextRead,
+)
 
 
 @pytest.fixture

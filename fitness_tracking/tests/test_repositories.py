@@ -8,30 +8,30 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from fitness_tracking.models import (
-    CricketCoachingEntry,
     CricketMatchEntry,
     FitnessEntry,
-    RestDayEntry,
 )
-from fitness_tracking.repositories import (
-    CricketCoachingEntryRepository,
+from fitness_tracking.models.cricket_coaching import CricketCoachingEntry
+from fitness_tracking.models.rest_day import RestDayEntry
+from fitness_tracking.repositories.cricket_coaching_repository import CricketCoachingEntryRepository
+from fitness_tracking.repositories.cricket_match_repository import (
     CricketMatchEntryRepository,
-    FitnessEntryRepository,
-    RestDayEntryRepository,
 )
+from fitness_tracking.repositories.fitness_repository import FitnessEntryRepository
+from fitness_tracking.repositories.rest_day_repository import RestDayEntryRepository
 from fitness_tracking.schemas import (
     CricketCoachingEntryRead,
-    CricketMatchEntryRead,
     FitnessEntryRead,
     RestDayEntryRead,
 )
-from fitness_tracking.schemas.cricket_enums import (
+from fitness_tracking.schemas.coaching_focus_type import (
     CoachingFocus,
-    CricketDiscipline,
-    MatchFormat,
 )
+from fitness_tracking.schemas.cricket_discipline_type import CricketDiscipline
+from fitness_tracking.schemas.cricket_match import CricketMatchEntryRead
 from fitness_tracking.schemas.exercise_type import ExerciseType
 from fitness_tracking.schemas.intensity_level import IntensityLevel
+from fitness_tracking.schemas.match_format import MatchFormat
 
 
 @pytest.fixture
