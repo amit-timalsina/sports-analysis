@@ -5,6 +5,7 @@ import os
 import re
 import subprocess
 import tempfile
+from collections.abc import AsyncGenerator
 from datetime import UTC, datetime
 from io import BytesIO
 from typing import Any
@@ -14,12 +15,14 @@ from langfuse.openai import AsyncOpenAI
 
 from common.config.settings import settings
 from common.exceptions import AppError
-from fitness_tracking.schemas.cricket import (
+from fitness_tracking.schemas.cricket_coaching_data_extraction import (
     CricketCoachingDataExtraction,
-    CricketMatchDataExtraction,
-    RestDayDataExtraction,
 )
-from fitness_tracking.schemas.fitness import FitnessDataExtraction
+from fitness_tracking.schemas.cricket_match_data_extraction import CricketMatchDataExtraction
+from fitness_tracking.schemas.enums.exercise_type import ExerciseType
+from fitness_tracking.schemas.enums.intensity_level import IntensityLevel
+from fitness_tracking.schemas.fitness_data_extraction import FitnessDataExtraction
+from fitness_tracking.schemas.rest_day_data_extraction import RestDayDataExtraction
 from voice_processing.schemas.processing import TranscriptionResponse
 
 logger = logging.getLogger(__name__)
@@ -39,14 +42,9 @@ class OpenAIService:
         """Initialize OpenAI service."""
         self._client: AsyncOpenAI | None = None
 
-    def _get_client(self) -> AsyncOpenAI | None:
+    def get_client(self) -> AsyncOpenAI | None:
         """Get OpenAI client, initializing it if needed."""
         if self._client is None:
-            # Check if we're in testing mode
-            if settings.app.is_testing:
-                # Return None for testing - functions should handle this gracefully
-                return None
-
             if not settings.openai.api_key:
                 logger.warning("OpenAI API key not configured")
                 return None
@@ -57,7 +55,7 @@ class OpenAIService:
                     timeout=settings.openai.timeout,
                 )
             except Exception as e:
-                logger.warning("Failed to initialize OpenAI client: %s", e)
+                logger.exception("Failed to initialize OpenAI client: %s", e)
                 return None
 
         return self._client
@@ -65,7 +63,8 @@ class OpenAIService:
     def _convert_webm_to_wav(self, webm_data: bytes) -> bytes:
         """Convert WebM audio to WAV format using ffmpeg."""
         if len(webm_data) == 0:
-            raise OpenAIServiceError("Cannot convert empty WebM data")
+            msg = "Cannot convert empty WebM data"
+            raise OpenAIServiceError(msg)
 
         logger.info("Starting WebM to WAV conversion: %d bytes input", len(webm_data))
 
@@ -231,7 +230,7 @@ class OpenAIService:
             OpenAIServiceError: If transcription fails
 
         """
-        client = self._get_client()
+        client = self.get_client()
 
         # Handle testing or when client is not available
         if client is None:
@@ -431,38 +430,29 @@ class OpenAIService:
             Dictionary containing structured fitness data
 
         """
-        client = self._get_client()
+        client = self.get_client()
 
         # Handle testing or when client is not available
         if client is None:
             logger.info("Mock fitness data extraction for testing")
             return {
-                "fitness_type": "running",
+                "exercise_type": ExerciseType.RUNNING,
                 "duration_minutes": 30,
-                "intensity": "medium",
+                "intensity": IntensityLevel.MEDIUM,
                 "details": "Mock details from transcript",
                 "mental_state": "good",
                 "energy_level": 4,
-                "timestamp": datetime.now(UTC).isoformat(),
+                "location": "local park",
             }
 
         try:
             # Enhanced system prompt for better structured output compliance
             system_prompt = """You are an expert fitness tracker analyzer for young cricket players.
 
-CRITICAL: You MUST extract fitness data and return it in the EXACT format specified by the schema.
-
-For fitness_type, you MUST use EXACTLY one of these values:
-- "running" (for jog, jogging, run, sprint, etc.)
-- "strength_training" (for gym, weights, lifting, etc.) 
-- "cricket_specific" (for cricket training, cricket fitness)
-- "cardio" (for cardiovascular, aerobic, cycling, swimming)
-- "flexibility" (for stretching, yoga, pilates)
-- "general_fitness" (for general workout, exercise, fitness)
-
-For intensity, you MUST use EXACTLY one of: "low", "medium", "high"
-
-Map similar terms to the allowed values. DO NOT use any other values."""
+CRITICAL:
+- You MUST extract fitness data and return it in the EXACT format specified by the schema.
+- Don't make up information. Only extract what is present in the transcript.
+"""
 
             # Use structured outputs with strict schema enforcement
             completion = await client.beta.chat.completions.parse(
@@ -474,18 +464,18 @@ Map similar terms to the allowed values. DO NOT use any other values."""
                     },
                     {
                         "role": "user",
-                        "content": f"Extract fitness information from this transcript. The user is a 15-year-old cricket player in Nepal: {transcript}",
+                        "content": f"Extract fitness information from this transcript: {transcript}",
                     },
                 ],
                 response_format=FitnessDataExtraction,
-                temperature=0.1,  # Lower temperature for more consistent extraction
+                temperature=0.0,  # Lower temperature for more consistent extraction
                 max_tokens=settings.openai.max_tokens,
             )
 
             # Enhanced error handling for parsing
             if not completion.choices:
                 logger.warning("No choices in OpenAI response")
-                return self._extract_fitness_fallback(transcript)
+                return {}
 
             choice = completion.choices[0]
             if not choice.message.parsed:
@@ -493,57 +483,21 @@ Map similar terms to the allowed values. DO NOT use any other values."""
                 # Check if there was a parsing error
                 if choice.message.refusal:
                     logger.warning("OpenAI refused to parse: %s", choice.message.refusal)
-                return self._extract_fitness_fallback(transcript)
+                return {}
 
             # Parse the structured response - schema validation is automatic via Pydantic
             fitness_data = choice.message.parsed
 
             logger.info(
-                "Successfully extracted structured fitness data: fitness_type=%s",
-                fitness_data.fitness_type,
+                "Successfully extracted structured fitness data: exercise_type=%s",
+                fitness_data.exercise_type,
             )
 
-            # Convert to dictionary format expected by the system
-            result = {
-                "fitness_type": fitness_data.fitness_type,
-                "duration_minutes": fitness_data.duration_minutes,
-                "intensity": fitness_data.intensity,
-                "details": fitness_data.details,
-                "mental_state": fitness_data.mental_state,
-                "energy_level": fitness_data.energy_level,
-                "distance_km": fitness_data.distance_km,
-                "calories_burned": fitness_data.calories_burned,
-                "location": fitness_data.location,
-                "timestamp": datetime.now(UTC).isoformat(),
-            }
+            return fitness_data.model_dump()
 
-            # Final validation to ensure we have valid enum values
-            if fitness_data.fitness_type not in [
-                "running",
-                "strength_training",
-                "cricket_specific",
-                "cardio",
-                "flexibility",
-                "general_fitness",
-            ]:
-                logger.warning(
-                    "Invalid fitness_type received: %s, using fallback",
-                    fitness_data.fitness_type,
-                )
-                return self._extract_fitness_fallback(transcript)
-
-            if fitness_data.intensity not in ["low", "medium", "high"]:
-                logger.warning(
-                    "Invalid intensity received: %s, using fallback",
-                    fitness_data.intensity,
-                )
-                return self._extract_fitness_fallback(transcript)
-
-            return result
-
-        except Exception as e:
-            logger.exception("Fitness data extraction failed: %s", e)
-            return self._extract_fitness_fallback(transcript)
+        except Exception:
+            logger.exception("Fitness data extraction failed")
+            return {}
 
     def _extract_fitness_fallback(self, transcript: str) -> dict[str, Any]:
         """Fallback fitness data extraction using keyword matching with guaranteed valid values."""
@@ -598,7 +552,7 @@ Map similar terms to the allowed values. DO NOT use any other values."""
     @observe(capture_input=True, capture_output=True)
     async def extract_cricket_coaching_data(self, transcript: str) -> dict[str, Any]:
         """Extract structured cricket coaching data from transcript."""
-        client = self._get_client()
+        client = self.get_client()
 
         if client is None:
             logger.info("Mock cricket coaching data extraction for testing")
@@ -623,8 +577,8 @@ Map similar terms to the allowed values. DO NOT use any other values."""
                         "content": (
                             "You are an expert cricket coaching analyst for a 15-year-old "
                             "cricket player in Nepal. Extract cricket coaching session information "
-                            "from the user's voice transcript. Focus on batting drills, "
-                            "wicket keeping practice, technical skills, and performance feedback."
+                            "You MUST extract cricket coaching data and return it in the EXACT format specified by the schema."
+                            "Don't make up information. Only extract what is present in the transcript."
                         ),
                     },
                     {
@@ -637,28 +591,12 @@ Map similar terms to the allowed values. DO NOT use any other values."""
                 max_tokens=settings.openai.max_tokens,
             )
 
-            if not completion.choices or not completion.choices[0].message.parsed:
-                return self._extract_cricket_coaching_fallback(transcript)
-
             coaching_data = completion.choices[0].message.parsed
-            return {
-                "session_type": coaching_data.session_type,
-                "duration_minutes": coaching_data.duration_minutes,
-                "what_went_well": coaching_data.what_went_well,
-                "areas_for_improvement": coaching_data.areas_for_improvement,
-                "skills_practiced": coaching_data.skills_practiced,
-                "self_assessment_score": coaching_data.self_assessment_score,
-                "confidence_level": coaching_data.confidence_level,
-                "focus_level": coaching_data.focus_level,
-                "mental_state": coaching_data.mental_state,
-                "coach_feedback": coaching_data.coach_feedback,
-                "difficulty_level": coaching_data.difficulty_level,
-                "learning_satisfaction": coaching_data.learning_satisfaction,
-            }
+            return coaching_data.model_dump()
 
         except Exception:
             logger.exception("Cricket coaching data extraction failed")
-            return self._extract_cricket_coaching_fallback(transcript)
+            return {}
 
     def _extract_cricket_coaching_fallback(self, transcript: str) -> dict[str, Any]:
         """Fallback cricket coaching data extraction."""
@@ -687,7 +625,7 @@ Map similar terms to the allowed values. DO NOT use any other values."""
 
     async def extract_cricket_match_data(self, transcript: str) -> dict[str, Any]:
         """Extract structured cricket match data from transcript."""
-        client = self._get_client()
+        client = self.get_client()
 
         if client is None:
             return {
@@ -710,8 +648,8 @@ Map similar terms to the allowed values. DO NOT use any other values."""
                         "role": "system",
                         "content": (
                             "You are an expert cricket match analyst for a 15-year-old "
-                            "cricket player in Nepal. Extract match performance data "
-                            "including batting stats, wicket keeping performance, and mental state."
+                            "You MUST extract cricket match performance data and return it in the EXACT format specified by the schema.  "
+                            "Don't make up information. Only extract what is present in the transcript."
                         ),
                     },
                     {
@@ -724,30 +662,12 @@ Map similar terms to the allowed values. DO NOT use any other values."""
                 max_tokens=settings.openai.max_tokens,
             )
 
-            if not completion.choices or not completion.choices[0].message.parsed:
-                return self._extract_cricket_match_fallback(transcript)
-
             match_data = completion.choices[0].message.parsed
-            return {
-                "match_type": match_data.match_type,
-                "opposition_strength": match_data.opposition_strength,
-                "pre_match_nerves": match_data.pre_match_nerves,
-                "post_match_satisfaction": match_data.post_match_satisfaction,
-                "mental_state": match_data.mental_state,
-                "runs_scored": match_data.runs_scored,
-                "balls_faced": match_data.balls_faced,
-                "boundaries_4s": match_data.boundaries_4s,
-                "boundaries_6s": match_data.boundaries_6s,
-                "how_out": match_data.how_out,
-                "key_shots_played": match_data.key_shots_played,
-                "catches_taken": match_data.catches_taken,
-                "catches_dropped": match_data.catches_dropped,
-                "stumpings": match_data.stumpings,
-            }
+            return match_data.model_dump()
 
         except Exception:
             logger.exception("Cricket match data extraction failed")
-            return self._extract_cricket_match_fallback(transcript)
+            return {}
 
     def _extract_cricket_match_fallback(self, transcript: str) -> dict[str, Any]:
         """Fallback cricket match data extraction."""
@@ -776,7 +696,7 @@ Map similar terms to the allowed values. DO NOT use any other values."""
 
     async def extract_rest_day_data(self, transcript: str) -> dict[str, Any]:
         """Extract structured rest day data from transcript."""
-        client = self._get_client()
+        client = self.get_client()
 
         if client is None:
             return {
@@ -797,8 +717,8 @@ Map similar terms to the allowed values. DO NOT use any other values."""
                         "role": "system",
                         "content": (
                             "You are an expert recovery and wellness analyst for a 15-year-old "
-                            "cricket player in Nepal. Extract rest day information including "
-                            "physical state, mental state, and recovery activities."
+                            "You MUST extract cricket match performance data and return it in the EXACT format specified by the schema.  "
+                            "Don't make up information. Only extract what is present in the transcript."
                         ),
                     },
                     {
@@ -811,27 +731,12 @@ Map similar terms to the allowed values. DO NOT use any other values."""
                 max_tokens=settings.openai.max_tokens,
             )
 
-            if not completion.choices or not completion.choices[0].message.parsed:
-                return self._extract_rest_day_fallback(transcript)
-
             rest_data = completion.choices[0].message.parsed
-            return {
-                "rest_type": rest_data.rest_type,
-                "physical_state": rest_data.physical_state,
-                "fatigue_level": rest_data.fatigue_level,
-                "energy_level": rest_data.energy_level,
-                "motivation_level": rest_data.motivation_level,
-                "mood_description": rest_data.mood_description,
-                "mental_state": rest_data.mental_state,
-                "soreness_level": rest_data.soreness_level,
-                "training_reflections": rest_data.training_reflections,
-                "goals_concerns": rest_data.goals_concerns,
-                "recovery_activities": rest_data.recovery_activities,
-            }
+            return rest_data.model_dump()
 
         except Exception:
             logger.exception("Rest day data extraction failed")
-            return self._extract_rest_day_fallback(transcript)
+            return {}
 
     def _extract_rest_day_fallback(self, transcript: str) -> dict[str, Any]:
         """Fallback rest day data extraction."""
@@ -852,6 +757,11 @@ Map similar terms to the allowed values. DO NOT use any other values."""
             "mood_description": "relaxed",
             "mental_state": "good",
         }
+
+    @classmethod
+    async def get_as_dependency(cls) -> AsyncGenerator["OpenAIService", None]:
+        """Get the OpenAI service as a dependency."""
+        yield cls()
 
 
 # Global OpenAI service instance

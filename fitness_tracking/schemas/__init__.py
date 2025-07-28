@@ -1,21 +1,17 @@
 """Fitness tracking Pydantic schemas."""
 
-from .cricket import (
+from .cricket_coaching import (
     CricketCoachingEntryCreate,
     CricketCoachingEntryRead,
     CricketCoachingEntryUpdate,
-    CricketMatchEntryCreate,
-    CricketMatchEntryRead,
-    CricketMatchEntryUpdate,
 )
+from .cricket_match import CricketMatchEntryCreate, CricketMatchEntryRead, CricketMatchEntryUpdate
 from .fitness import (
     FitnessEntryCreate,
     FitnessEntryRead,
     FitnessEntryUpdate,
-    RestDayEntryCreate,
-    RestDayEntryRead,
-    RestDayEntryUpdate,
 )
+from .rest_day import RestDayEntryCreate, RestDayEntryRead, RestDayEntryUpdate
 
 __all__ = (
     "CricketCoachingEntryCreate",

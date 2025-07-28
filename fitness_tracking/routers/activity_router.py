@@ -16,23 +16,22 @@ from fitness_tracking.exceptions import (
     RestDayEntryCreationError,
     RestDayEntryNotFoundError,
 )
-from fitness_tracking.repositories import (
-    CricketCoachingEntryRepository,
+from fitness_tracking.repositories.cricket_coaching_repository import CricketCoachingEntryRepository
+from fitness_tracking.repositories.cricket_match_repository import (
     CricketMatchEntryRepository,
-    FitnessEntryRepository,
-    RestDayEntryRepository,
 )
+from fitness_tracking.repositories.fitness_repository import FitnessEntryRepository
+from fitness_tracking.repositories.rest_day_repository import RestDayEntryRepository
 from fitness_tracking.schemas import (
     CricketCoachingEntryCreate,
     CricketCoachingEntryRead,
-    CricketMatchEntryCreate,
-    CricketMatchEntryRead,
     FitnessEntryCreate,
     FitnessEntryRead,
     FitnessEntryUpdate,
     RestDayEntryCreate,
     RestDayEntryRead,
 )
+from fitness_tracking.schemas.cricket_match import CricketMatchEntryCreate, CricketMatchEntryRead
 
 # Initialize routers
 fitness_router = APIRouter(prefix="/fitness", tags=["fitness"])

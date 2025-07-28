@@ -58,7 +58,7 @@ class OpenAISettings(AppBaseSettings):
     api_key: str = Field(default="", description="OpenAI API key")
     whisper_model: str = Field(default="whisper-1", description="Whisper model for transcription")
     gpt_model: str = Field(
-        default="gpt-4o-2024-08-06",
+        default="gpt-4.1",
         description="GPT model for structured extraction",
     )
     max_tokens: int = Field(default=500, description="Maximum tokens for responses")
@@ -169,15 +169,6 @@ class ApplicationSettings(AppBaseSettings):
     )
     version: str = Field(default="1.0.0", description="Application version")
 
-    # Environment settings
-    environment: str = Field(
-        default="development",
-        description="Environment (development/production/testing)",
-    )
-    debug: bool = Field(default=False, description="Enable debug mode")
-    testing: bool = Field(default=False, description="Enable testing mode")
-    production: bool = Field(default=False, description="Production mode")
-
     # Server settings - use localhost for development, 0.0.0.0 for production
     host: str = Field(default="127.0.0.1", description="Server host")
     port: int = Field(default=8010, description="Server port")
@@ -207,21 +198,6 @@ class ApplicationSettings(AppBaseSettings):
             return v
         return [str(v)]
 
-    @computed_field
-    def is_development(self) -> bool:
-        """Check if running in development mode."""
-        return self.environment.lower() == "development"
-
-    @computed_field
-    def is_production(self) -> bool:
-        """Check if running in production mode."""
-        return self.environment.lower() == "production" or self.production
-
-    @computed_field
-    def is_testing(self) -> bool:
-        """Check if running in testing mode."""
-        return self.environment.lower() == "testing" or self.testing
-
 
 class Settings(AppBaseSettings):
     """Main settings container."""
@@ -239,20 +215,6 @@ class Settings(AppBaseSettings):
     audio: AudioSettings = Field(default_factory=lambda: AudioSettings())
     websocket: WebSocketSettings = Field(default_factory=lambda: WebSocketSettings())
     validation: ValidationSettings = Field(default_factory=lambda: ValidationSettings())
-
-    def __init__(self, **kwargs: Any) -> None:
-        """Initialize settings with environment variable support."""
-        super().__init__(**kwargs)
-
-        # Override testing mode if TESTING environment variable is set
-        if os.getenv("TESTING", "false").lower() in ("true", "1", "yes"):
-            self.app.testing = True
-            self.app.environment = "testing"
-
-        # Override production mode if PRODUCTION environment variable is set
-        if os.getenv("PRODUCTION", "false").lower() in ("true", "1", "yes"):
-            self.app.production = True
-            self.app.environment = "production"
 
 
 # Global settings instance

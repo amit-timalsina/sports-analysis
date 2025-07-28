@@ -58,9 +58,11 @@
                         // Check if access_token is present in the response
                         if (response.access_token) {
                             // Store access_token in localStorage for future requests
+                            // Store under both 'access_token' and 'token' for compatibility with dashboard.js
                             localStorage.setItem('access_token', response.access_token);
-                            // Redirect to /email route after successful login
-                            window.location.href = '/email/' + response.access_token;
+                            localStorage.setItem('token', response.access_token); // For dashboard.js compatibility
+                            // Redirect to /home (main dashboard) after successful login
+                            window.location.href = '/home';
                         }
                     } catch (err) {
                         // Handle parsing errors in the response

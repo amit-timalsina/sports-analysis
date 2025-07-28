@@ -1,15 +1,9 @@
 """Voice processing FastAPI routers."""
 
-from .conversation_router import (
-    analytics_router,
-    conversation_router,
-    message_router,
-    question_router,
-)
+from .chat_message_router import router as message_router
+from .conversation_router import router as conversation_router
 
 __all__ = (
-    "analytics_router",
     "conversation_router",
     "message_router",
-    "question_router",
 )
