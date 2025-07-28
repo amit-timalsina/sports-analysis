@@ -8,7 +8,7 @@ from common.schemas import SuccessResponse
 from voice_processing.services.audio_storage import audio_storage
 
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/api/voice/audio", tags=["voice-audio"])
+router = APIRouter(prefix="/api/audio", tags=["audio"])
 
 
 @router.get("/stats")
@@ -17,7 +17,7 @@ async def get_audio_storage_stats() -> SuccessResponse:
     try:
         stats = audio_storage.get_storage_stats()
         return SuccessResponse(
-            message="Audio storage statistics retrieved",
+            message="Audio storage statistics",
             data=stats,
         )
     except Exception as e:
@@ -31,7 +31,7 @@ async def get_session_audio_files(session_id: str) -> SuccessResponse:
     try:
         files = audio_storage.get_session_audio_files(session_id)
         return SuccessResponse(
-            message="Session audio files retrieved",
+            message="Session audio files",
             data=files,
         )
     except Exception as e:

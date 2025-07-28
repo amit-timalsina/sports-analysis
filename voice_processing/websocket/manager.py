@@ -1,7 +1,6 @@
 """WebSocket connection management for voice processing sessions."""
 
 import json
-import logging
 from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
@@ -10,9 +9,10 @@ from fastapi import WebSocket, WebSocketDisconnect
 
 from common.config.settings import settings
 from common.exceptions import AppError
+from logger import get_logger
 from voice_processing.schemas.processing import WebSocketMessage
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class UUIDEncoder(json.JSONEncoder):
@@ -37,11 +37,11 @@ class ConnectionManager:
 
     def __init__(self) -> None:
         """Initialize the connection manager."""
-        self.active_connections: dict[str, WebSocket] = {}
-        self.session_metadata: dict[str, dict[str, Any]] = {}
-        self.audio_buffers: dict[str, bytes] = {}  # Add audio buffering
+        self.active_connections: dict[UUID, WebSocket] = {}
+        self.session_metadata: dict[UUID, dict[str, Any]] = {}
+        self.audio_buffers: dict[UUID, bytes] = {}  # Add audio buffering
 
-    async def connect(self, websocket: WebSocket, session_id: str) -> None:
+    async def connect(self, websocket: WebSocket, session_id: UUID) -> None:
         """
         Accept and store a WebSocket connection with connection limits.
 
@@ -77,7 +77,7 @@ class ConnectionManager:
             len(self.active_connections),
         )
 
-    def disconnect(self, session_id: str) -> None:
+    def disconnect(self, session_id: UUID) -> None:
         """
         Disconnect and clean up a WebSocket session.
 
@@ -101,7 +101,7 @@ class ConnectionManager:
             len(self.active_connections),
         )
 
-    async def send_message(self, message: WebSocketMessage, session_id: str) -> None:
+    async def send_message(self, message: WebSocketMessage, session_id: UUID) -> None:
         """
         Send a structured message to a specific session.
 
@@ -115,13 +115,12 @@ class ConnectionManager:
             try:
                 # Use custom encoder for UUID objects
                 message_data = message.model_dump()
+                logger.info("Message sent to session %s: %s", session_id, message_data)
                 await websocket.send_text(json.dumps(message_data, cls=UUIDEncoder))
 
                 # Update metadata
                 if session_id in self.session_metadata:
                     self.session_metadata[session_id]["message_count"] += 1
-
-                logger.debug("Message sent to session %s: %s", session_id, message.type)
 
             except WebSocketDisconnect:
                 logger.info(f"WebSocket disconnected during send for session: {session_id}")
@@ -134,7 +133,7 @@ class ConnectionManager:
         else:
             logger.warning("Attempted to send message to non-existent session: %s", session_id)
 
-    async def send_personal_message(self, message: dict[str, Any], session_id: str) -> None:
+    async def send_personal_message(self, message: dict[str, Any], session_id: UUID) -> None:
         """
         Send a raw dictionary message to a specific session (for backward compatibility).
 
@@ -204,7 +203,7 @@ class ConnectionManager:
         for session_id in disconnected_sessions:
             self.disconnect(session_id)
 
-    def get_active_sessions(self) -> list[str]:
+    def get_active_sessions(self) -> list[UUID]:
         """
         Get list of currently active session IDs.
 
@@ -214,7 +213,7 @@ class ConnectionManager:
         """
         return list(self.active_connections.keys())
 
-    def is_session_active(self, session_id: str) -> bool:
+    def is_session_active(self, session_id: UUID) -> bool:
         """
         Check if a session is currently active.
 
@@ -237,7 +236,7 @@ class ConnectionManager:
         """
         return len(self.active_connections)
 
-    def get_connection_info(self, session_id: str) -> dict[str, Any] | None:
+    def get_connection_info(self, session_id: UUID) -> dict[str, Any] | None:
         """
         Get connection information for a specific session.
 
@@ -279,7 +278,7 @@ class ConnectionManager:
             ),
         }
 
-    def set_session_metadata(self, session_id: str, metadata: dict[str, Any]) -> None:
+    def set_session_metadata(self, session_id: UUID, metadata: dict[str, Any]) -> None:
         """
         Set custom metadata for a session.
 
@@ -295,7 +294,7 @@ class ConnectionManager:
         else:
             logger.warning("Attempted to set metadata for non-existent session: %s", session_id)
 
-    def get_session_metadata(self, session_id: str) -> dict[str, Any] | None:
+    def get_session_metadata(self, session_id: UUID) -> dict[str, Any] | None:
         """
         Get custom metadata for a session.
 
@@ -336,7 +335,7 @@ class ConnectionManager:
         self.session_metadata.clear()
         logger.info("WebSocket cleanup completed")
 
-    def accumulate_audio_chunk(self, session_id: str, audio_chunk: bytes) -> None:
+    def accumulate_audio_chunk(self, session_id: UUID, audio_chunk: bytes) -> None:
         """
         Accumulate audio chunks for a session.
 
@@ -356,7 +355,7 @@ class ConnectionManager:
             len(self.audio_buffers[session_id]),
         )
 
-    def get_accumulated_audio(self, session_id: str) -> bytes:
+    def get_accumulated_audio(self, session_id: UUID) -> bytes:
         """
         Get all accumulated audio for a session.
 
@@ -369,7 +368,7 @@ class ConnectionManager:
         """
         return self.audio_buffers.get(session_id, b"")
 
-    def clear_audio_buffer(self, session_id: str) -> None:
+    def clear_audio_buffer(self, session_id: UUID) -> None:
         """
         Clear the audio buffer for a session.
 

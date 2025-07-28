@@ -1,17 +1,9 @@
 """Voice processing repositories for data access."""
 
-from .conversation_repository import (
-    ConversationAnalyticsRepository,
-    ConversationMessageRepository,
-    ConversationRepository,
-    ConversationTurnRepository,
-    QuestionContextRepository,
-)
+from .chat_message_repository import ChatMessageRepository
+from .conversation_repository import ConversationRepository
 
 __all__ = (
-    "ConversationAnalyticsRepository",
-    "ConversationMessageRepository",
+    "ChatMessageRepository",
     "ConversationRepository",
-    "ConversationTurnRepository",
-    "QuestionContextRepository",
 )

@@ -7,7 +7,8 @@ from pydantic import ValidationError
 
 from common.schemas.entry_type import EntryType
 from fitness_tracking.schemas.exercise_type import ExerciseType
-from fitness_tracking.schemas.fitness import FitnessDataExtraction, FitnessEntryCreate
+from fitness_tracking.schemas.fitness import FitnessEntryCreate
+from fitness_tracking.schemas.fitness_data_extraction import FitnessDataExtraction
 from fitness_tracking.schemas.intensity_level import IntensityLevel
 
 
