@@ -1,11 +1,10 @@
-import logging
-
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy.pool import AsyncAdaptedQueuePool
 
 from database.config import get_database_settings
+from logger import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 settings = get_database_settings()
 engine = create_async_engine(

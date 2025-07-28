@@ -1,48 +1,12 @@
 """Application settings using the user's existing AppBaseSettings pattern."""
 
 import json
-import os
 from typing import Any
 
-from pydantic import Field, computed_field, field_validator
+from pydantic import Field, field_validator
 from pydantic_settings import SettingsConfigDict
 
 from common.schemas import AppBaseSettings
-
-
-class DatabaseSettings(AppBaseSettings):
-    """Database configuration settings."""
-
-    model_config = SettingsConfigDict(
-        env_prefix="DB_",
-        env_file=".env",
-        env_file_encoding="utf-8",
-        extra="ignore",
-    )
-
-    host: str = Field(default="localhost", description="Database host")
-    port: int = Field(default=9432, description="Database port")
-    name: str = Field(default="cricket_fitness", description="Database name")
-    username: str = Field(default="user", description="Database username")
-    password: str = Field(default="password", description="Database password")
-    driver: str = Field(default="postgresql+asyncpg", description="Database driver")
-    echo: bool = Field(default=False, description="Enable SQL query logging")
-    pool_size: int = Field(default=10, description="Connection pool size")
-    max_overflow: int = Field(default=20, description="Max overflow connections")
-
-    @computed_field
-    def url(self) -> str:
-        """Construct database URL."""
-        # Use SQLite for testing to avoid PostgreSQL dependency issues
-        if (
-            self.model_config.get("env_prefix") == "DB_"
-            and os.getenv("TESTING", "false").lower() == "true"
-        ):
-            return "sqlite+aiosqlite:///./test.db"
-
-        return (
-            f"{self.driver}://{self.username}:{self.password}@{self.host}:{self.port}/{self.name}"
-        )
 
 
 class OpenAISettings(AppBaseSettings):
@@ -210,7 +174,6 @@ class Settings(AppBaseSettings):
 
     # Sub-settings
     app: ApplicationSettings = Field(default_factory=lambda: ApplicationSettings())
-    database: DatabaseSettings = Field(default_factory=lambda: DatabaseSettings())
     openai: OpenAISettings = Field(default_factory=lambda: OpenAISettings())
     audio: AudioSettings = Field(default_factory=lambda: AudioSettings())
     websocket: WebSocketSettings = Field(default_factory=lambda: WebSocketSettings())
