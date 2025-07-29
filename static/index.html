@@ -330,19 +330,32 @@
     <script src="/static/js/dashboard.js"></script>
     <script src="/static/js/charts.js"></script>
     <script>
-        // Global variables for voice interface integration
-        let currentEntryType = 'fitness';
-        let socket = null;
-        let isRecording = false;
-        let mediaRecorder = null;
-        let audioStream = null;
-        let currentSessionId = crypto.randomUUID();
-        // Turn counter for conversation flow visualization
-        let flowTurn = 0;
-        // Flag to prevent multiple conversation creations
-        let isCreatingConversation = false;
-        // Make it globally accessible
-        window.isCreatingConversation = isCreatingConversation;
+        // Initialize all global variables immediately to prevent hoisting issues
+        (function() {
+            'use strict';
+            
+            // Global variables for voice interface integration - Initialize with explicit values
+            window.currentEntryType = 'fitness';
+            window.socket = null;
+            window.isRecording = false;
+            window.mediaRecorder = null;
+            window.audioStream = null;
+            window.currentSessionId = crypto.randomUUID();
+            // Turn counter for conversation flow visualization - Use window object to ensure global scope
+            window.flowTurn = 0;
+            // Flag to prevent multiple conversation creations
+            window.isCreatingConversation = false;
+            
+            // Also set them as var declarations for compatibility
+            var currentEntryType = window.currentEntryType;
+            var socket = window.socket;
+            var isRecording = window.isRecording;
+            var mediaRecorder = window.mediaRecorder;
+            var audioStream = window.audioStream;
+            var currentSessionId = window.currentSessionId;
+            var flowTurn = window.flowTurn;
+            var isCreatingConversation = window.isCreatingConversation;
+        })();
 
         // Helper function to map entry types to ActivityType enum values
         function mapEntryTypeToActivityType(entryType) {
@@ -358,7 +371,7 @@
         // Function to create a new conversation
         async function createConversation() {
             const token = localStorage.getItem("token");
-            const activityType = mapEntryTypeToActivityType(currentEntryType);
+            const activityType = mapEntryTypeToActivityType(window.currentEntryType);
             
             try {
                 console.log(`📤 Creating conversation for activity type: ${activityType}`);
@@ -405,7 +418,7 @@
             window.isCreatingConversation = true;
 
             try {
-                currentEntryType = entryType;
+                window.currentEntryType = entryType;
                 const modal = document.getElementById('voice-modal');
                 const title = document.getElementById('voice-title');
                 const description = document.getElementById('voice-description');
@@ -433,7 +446,7 @@
                 modal.classList.remove('hidden');
 
                 // Connect WebSocket if not already connected
-                if (!socket || socket.readyState !== WebSocket.OPEN) {
+                if (!window.socket || window.socket.readyState !== WebSocket.OPEN) {
                     console.log('🔄 Creating new conversation...');
                     updateStatus('🔄 Creating conversation session...', 'info');
 
@@ -445,11 +458,11 @@
                         return;
                     }
 
-                    currentSessionId = conversation.id;
+                    window.currentSessionId = conversation.id;
                     
                     // Wait for WebSocket connection before proceeding
                     await new Promise((resolve, reject) => {
-                        connectWebSocket(currentSessionId);
+                        connectWebSocket(window.currentSessionId);
                         
                         // Set a timeout to avoid hanging indefinitely
                         const timeout = setTimeout(() => {
@@ -457,7 +470,7 @@
                         }, 10000);
                         
                         const checkConnection = setInterval(() => {
-                            if (socket && socket.readyState === WebSocket.OPEN) {
+                            if (window.socket && window.socket.readyState === WebSocket.OPEN) {
                                 clearTimeout(timeout);
                                 clearInterval(checkConnection);
                                 resolve();
@@ -465,7 +478,7 @@
                         }, 100);
                     });
 
-                    console.log('✅ Conversation created successfully:', currentSessionId);
+                    console.log('✅ Conversation created successfully:', window.currentSessionId);
                     updateStatus('✅ Ready to record! Click microphone to start', 'success');
                 } else {
                     // WebSocket already connected, just update status
@@ -498,11 +511,11 @@
          * Send session metadata to backend to prepare for new activity type
          */
         function sendSessionMetadata() {
-            if (socket && socket.readyState === WebSocket.OPEN) {
-                console.log(`📤 Sending session metadata for activity type: ${currentEntryType}`);
-                socket.send(JSON.stringify({
+            if (window.socket && window.socket.readyState === WebSocket.OPEN) {
+                console.log(`📤 Sending session metadata for activity type: ${window.currentEntryType}`);
+                window.socket.send(JSON.stringify({
                     type: 'voice_data_meta',
-                    entry_type: currentEntryType
+                    entry_type: window.currentEntryType
                 }));
             } else {
                 console.warn('⚠️ WebSocket not ready, will send metadata when recording starts');
@@ -514,7 +527,7 @@
             modal.classList.add('hidden');
             
             // Stop recording if active
-            if (isRecording) {
+            if (window.isRecording) {
                 stopRecording();
             }
             
@@ -528,7 +541,8 @@
         function resetConversationState() {
             console.log('🔄 Resetting conversation state for new activity type');
             
-            // Reset conversation turn counter
+            // Reset conversation turn counter - ensure it's properly initialized
+            window.flowTurn = 0;
             flowTurn = 0;
             
             // Clear conversation flow UI if it exists
@@ -612,18 +626,18 @@
             
             const wsUrl = `${protocol}//${window.location.host}/api/voice_ws/ws/${sessionId}?token=${encodeURIComponent(token)}`;
 
-            socket = new WebSocket(wsUrl);
+            window.socket = new WebSocket(wsUrl);
             
-            socket.onopen = function() {
+            window.socket.onopen = function() {
                 updateStatus('Connected! Ready to record', 'success');
             };
             
-            socket.onmessage = function(event) {
+            window.socket.onmessage = function(event) {
                 const data = JSON.parse(event.data);
                 handleWebSocketMessage(data);
             };
             
-            socket.onclose = function(event) {
+            window.socket.onclose = function(event) {
                 if (event.code === 4001) {
                     updateStatus('❌ Authentication failed. Please check your login.', 'error');
                     console.error('WebSocket closed due to authentication failure');
@@ -633,7 +647,7 @@
                 }
             };
             
-            socket.onerror = function(error) {
+            window.socket.onerror = function(error) {
                 updateStatus('❌ Connection error. Please try again.', 'error');
                 console.error('WebSocket error:', error);
             };
@@ -664,8 +678,13 @@
                     // Display transcript in modal
                     showTranscript(data.data.transcript);
 
-                    // Add to conversation flow
+                    // Add to conversation flow - ensure flowTurn is properly initialized
+                    if (typeof flowTurn === 'undefined') {
+                        flowTurn = 0;
+                        window.flowTurn = 0;
+                    }
                     flowTurn += 1;
+                    window.flowTurn = flowTurn;
                     addConversationTurn(flowTurn, data.data.transcript, 'answer');
 
                     updateStatus('Processing data...', 'info');
@@ -1069,7 +1088,7 @@
         }
 
         async function toggleRecording() {
-            if (!isRecording) {
+            if (!window.isRecording) {
                 await startRecording();
             } else {
                 stopRecording();
@@ -1091,16 +1110,16 @@
                 updateRecordingVisualization(true);
                 
                 // Ensure backend has current session metadata before recording
-                if (socket && socket.readyState === WebSocket.OPEN) {
+                if (window.socket && window.socket.readyState === WebSocket.OPEN) {
                     console.log('📤 Ensuring backend has current session metadata before recording');
-                    socket.send(JSON.stringify({
+                    window.socket.send(JSON.stringify({
                         type: 'voice_data_meta',
-                        entry_type: currentEntryType
+                        entry_type: window.currentEntryType
                     }));
                 }
 
                 // Get microphone access
-                audioStream = await navigator.mediaDevices.getUserMedia({ 
+                window.audioStream = await navigator.mediaDevices.getUserMedia({ 
                     audio: {
                         sampleRate: 16000,
                         channelCount: 1,
@@ -1109,26 +1128,26 @@
                     } 
                 });
                 
-                mediaRecorder = new MediaRecorder(audioStream, {
+                window.mediaRecorder = new MediaRecorder(window.audioStream, {
                     mimeType: 'audio/webm;codecs=opus'
                 });
                 
-                mediaRecorder.ondataavailable = function(event) {
-                    if (event.data.size > 0 && socket.readyState === WebSocket.OPEN) {
-                        socket.send(event.data);
+                window.mediaRecorder.ondataavailable = function(event) {
+                    if (event.data.size > 0 && window.socket.readyState === WebSocket.OPEN) {
+                        window.socket.send(event.data);
                     }
                 };
                 
-                mediaRecorder.onstop = function() {
-                    if (socket && socket.readyState === WebSocket.OPEN) {
-                        socket.send(JSON.stringify({
+                window.mediaRecorder.onstop = function() {
+                    if (window.socket && window.socket.readyState === WebSocket.OPEN) {
+                        window.socket.send(JSON.stringify({
                             type: 'recording_complete'
                         }));
                     }
                 };
                 
-                mediaRecorder.start(1000);
-                isRecording = true;
+                window.mediaRecorder.start(1000);
+                window.isRecording = true;
                 
                 updateStatus('🎤 Recording... speak naturally about your activity', 'info');
                 
@@ -1148,13 +1167,13 @@
         }
 
         function stopRecording() {
-            if (mediaRecorder && isRecording) {
-                mediaRecorder.stop();
-                isRecording = false;
+            if (window.mediaRecorder && window.isRecording) {
+                window.mediaRecorder.stop();
+                window.isRecording = false;
                 
                 // Stop all tracks
-                if (audioStream) {
-                    audioStream.getTracks().forEach(track => track.stop());
+                if (window.audioStream) {
+                    window.audioStream.getTracks().forEach(track => track.stop());
                 }
                 
                 // Update button appearance
