@@ -270,15 +270,36 @@
                     <div class="tip-item">💡 <span>Be specific about duration, intensity, and how you felt</span></div>
                     <div class="tip-item">🎯 <span>Mention key details like distance, skills practiced, or performance</span></div>
                 </div>
+                
+                <!-- VM Audio Troubleshooting -->
+                <div id="vm-troubleshooting" class="vm-troubleshooting" style="margin-top: var(--spacing-md); padding: var(--spacing-sm); background: var(--card-background); border-radius: var(--border-radius); border: 1px solid var(--border-color);">
+                    <details>
+                        <summary style="cursor: pointer; font-weight: bold; color: var(--primary-color);">🔧 Having audio issues in VM? Click here</summary>
+                        <div style="margin-top: var(--spacing-sm); font-size: 0.9rem;">
+                            <button id="test-microphone" class="btn secondary small" onclick="testMicrophone()" style="margin-bottom: var(--spacing-sm);">
+                                🎤 Test Microphone
+                            </button>
+                            <div id="mic-test-result" style="margin-top: var(--spacing-sm); font-size: 0.8rem;"></div>
+                            <ul style="margin: var(--spacing-sm) 0; padding-left: var(--spacing-lg); color: var(--text-secondary);">
+                                <li>Ensure VM has audio device configured</li>
+                                <li>Check browser microphone permissions</li>
+                                <li>Try using Chrome or Firefox</li>
+                                <li>Verify HTTPS or localhost access</li>
+                                <li>Install VM guest tools/additions</li>
+                            </ul>
+                        </div>
+                    </details>
+                </div>
             </div>
             
             <div class="recording-section">
                 <div class="record-button-container">
-                    <button id="record-btn" class="record-btn enhanced">
+                    <button id="record-btn" class="record-btn enhanced" title="Click to start/stop recording">
                         <span class="btn-icon">🎤</span>
                         <span class="btn-text">Start Recording</span>
                     </button>
                     <div class="record-instruction">Tap to start recording</div>
+                    <div id="record-status" class="record-status" style="margin-top: var(--spacing-sm); font-size: 0.9rem; color: var(--text-secondary);"></div>
                 </div>
                 
                 <div id="recording-visualizer" class="recording-visualizer hidden">
@@ -290,6 +311,7 @@
                         <div class="recording-bar"></div>
                     </div>
                     <div class="recording-text">Recording in progress...</div>
+                    <div class="recording-timer" id="recording-timer">00:00</div>
                 </div>
             </div>
             
@@ -1118,42 +1140,165 @@
                     }));
                 }
 
-                // Get microphone access
-                window.audioStream = await navigator.mediaDevices.getUserMedia({ 
-                    audio: {
-                        sampleRate: 16000,
-                        channelCount: 1,
-                        echoCancellation: true,
-                        noiseSuppression: true
-                    } 
-                });
+                // Enhanced microphone access for VM environments
+                console.log('🎤 Attempting to access microphone...');
+                updateStatus('🎤 Requesting microphone access...', 'info');
                 
-                window.mediaRecorder = new MediaRecorder(window.audioStream, {
-                    mimeType: 'audio/webm;codecs=opus'
-                });
+                // Check if we're in a secure context (required for getUserMedia)
+                if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                    throw new Error('MediaDevices API not available. Please use HTTPS or localhost.');
+                }
                 
+                // Try multiple audio configurations for VM compatibility
+                const audioConfigs = [
+                    // Primary config - high quality
+                    {
+                        audio: {
+                            sampleRate: 16000,
+                            channelCount: 1,
+                            echoCancellation: true,
+                            noiseSuppression: true,
+                            autoGainControl: true
+                        }
+                    },
+                    // Fallback config - basic
+                    {
+                        audio: {
+                            sampleRate: 8000,
+                            channelCount: 1,
+                            echoCancellation: false,
+                            noiseSuppression: false,
+                            autoGainControl: false
+                        }
+                    },
+                    // Minimal config - VM compatible
+                    {
+                        audio: true
+                    }
+                ];
+
+                let audioStream = null;
+                let configUsed = null;
+
+                for (let i = 0; i < audioConfigs.length; i++) {
+                    try {
+                        console.log(`🔄 Trying audio config ${i + 1}:`, audioConfigs[i]);
+                        audioStream = await navigator.mediaDevices.getUserMedia(audioConfigs[i]);
+                        configUsed = i;
+                        console.log(`✅ Audio config ${i + 1} successful!`);
+                        break;
+                    } catch (configError) {
+                        console.warn(`⚠️ Audio config ${i + 1} failed:`, configError.message);
+                        if (i === audioConfigs.length - 1) {
+                            throw configError; // Re-throw the last error
+                        }
+                    }
+                }
+
+                if (!audioStream) {
+                    throw new Error('Unable to access microphone with any configuration');
+                }
+
+                window.audioStream = audioStream;
+                updateStatus(`🎤 Microphone connected (Config ${configUsed + 1})`, 'success');
+                
+                // Enhanced MediaRecorder creation with fallback MIME types
+                const mimeTypes = [
+                    'audio/webm;codecs=opus',
+                    'audio/webm',
+                    'audio/mp4',
+                    'audio/ogg;codecs=opus',
+                    'audio/wav'
+                ];
+
+                let selectedMimeType = null;
+                for (const mimeType of mimeTypes) {
+                    if (MediaRecorder.isTypeSupported(mimeType)) {
+                        selectedMimeType = mimeType;
+                        console.log(`✅ Using MIME type: ${mimeType}`);
+                        break;
+                    }
+                }
+
+                if (!selectedMimeType) {
+                    console.warn('⚠️ No supported MIME types found, using default');
+                    selectedMimeType = ''; // Let browser choose
+                }
+
+                const recorderOptions = selectedMimeType ? { mimeType: selectedMimeType } : {};
+                window.mediaRecorder = new MediaRecorder(window.audioStream, recorderOptions);
+                
+                // Enhanced event handlers with better error handling
                 window.mediaRecorder.ondataavailable = function(event) {
-                    if (event.data.size > 0 && window.socket.readyState === WebSocket.OPEN) {
-                        window.socket.send(event.data);
+                    if (event.data.size > 0) {
+                        if (window.socket && window.socket.readyState === WebSocket.OPEN) {
+                            console.log(`📤 Sending audio chunk: ${event.data.size} bytes`);
+                            window.socket.send(event.data);
+                        } else {
+                            console.warn('⚠️ WebSocket not ready, audio chunk lost');
+                            updateStatus('⚠️ Connection issue - reconnecting...', 'warning');
+                        }
                     }
                 };
                 
                 window.mediaRecorder.onstop = function() {
+                    console.log('🛑 Recording stopped');
                     if (window.socket && window.socket.readyState === WebSocket.OPEN) {
                         window.socket.send(JSON.stringify({
                             type: 'recording_complete'
                         }));
                     }
                 };
+
+                window.mediaRecorder.onerror = function(event) {
+                    console.error('❌ MediaRecorder error:', event.error);
+                    updateStatus('❌ Recording error: ' + event.error.message, 'error');
+                };
+
+                window.mediaRecorder.onstart = function() {
+                    console.log('▶️ Recording started successfully');
+                    updateStatus('🎤 Recording... speak naturally about your activity', 'info');
+                };
                 
-                window.mediaRecorder.start(1000);
-                window.isRecording = true;
-                
-                updateStatus('🎤 Recording... speak naturally about your activity', 'info');
+                // Start recording with error handling
+                try {
+                    window.mediaRecorder.start(1000); // 1 second chunks
+                    window.isRecording = true;
+                    window.recordingStartTime = Date.now();
+                    console.log('🎙️ MediaRecorder started with 1s chunks');
+                    
+                    // Start recording timer
+                    startRecordingTimer();
+                    
+                    // Update record status
+                    document.getElementById('record-status').textContent = 'Recording active - speak clearly';
+                } catch (startError) {
+                    console.error('❌ Failed to start MediaRecorder:', startError);
+                    throw new Error(`Failed to start recording: ${startError.message}`);
+                }
                 
             } catch (error) {
-                console.error('Recording failed:', error);
-                updateStatus('Recording failed: ' + error.message, 'error');
+                console.error('❌ Recording failed:', error);
+                
+                // Provide specific error messages for common VM issues
+                let errorMessage = 'Recording failed: ' + error.message;
+                let userMessage = errorMessage;
+
+                if (error.name === 'NotAllowedError' || error.message.includes('Permission denied')) {
+                    errorMessage = 'Microphone access denied. Please allow microphone permissions in your browser.';
+                    userMessage = `🔒 Microphone Permission Denied\n\nFor VM environments:\n1. Allow microphone in browser settings\n2. Check VM audio settings\n3. Try refreshing the page\n4. Ensure VM has audio device configured`;
+                } else if (error.name === 'NotFoundError' || error.message.includes('not found')) {
+                    errorMessage = 'No microphone found. Please check your audio devices.';
+                    userMessage = `🎤 No Microphone Found\n\nFor VM environments:\n1. Configure VM audio settings\n2. Install VM guest additions/tools\n3. Check host audio passthrough\n4. Verify microphone is connected to host`;
+                } else if (error.name === 'NotSupportedError') {
+                    errorMessage = 'Audio recording not supported in this browser/environment.';
+                    userMessage = `🚫 Audio Not Supported\n\nFor VM environments:\n1. Use Chrome/Firefox browser\n2. Enable HTTPS/localhost\n3. Update browser to latest version\n4. Check VM browser compatibility`;
+                } else if (error.message.includes('secure context')) {
+                    errorMessage = 'Microphone requires HTTPS or localhost. Please check your connection.';
+                    userMessage = `🔒 Secure Context Required\n\nFor VM environments:\n1. Use HTTPS instead of HTTP\n2. Access via localhost\n3. Configure SSL certificates\n4. Check browser security settings`;
+                }
+
+                updateStatus(errorMessage, 'error');
                 
                 // Reset button on error
                 const recordBtn = document.getElementById('record-btn');
@@ -1163,13 +1308,204 @@
                 recordBtn.classList.remove('recording');
                 if (btnIcon) btnIcon.textContent = '🎤';
                 if (btnText) btnText.textContent = 'Start Recording';
+                
+                // Hide recording visualizer
+                updateRecordingVisualization(false);
+
+                // Show detailed error for VM troubleshooting
+                setTimeout(() => {
+                    alert(userMessage);
+                }, 100);
+
+                // Cleanup any partial streams
+                if (window.audioStream) {
+                    window.audioStream.getTracks().forEach(track => track.stop());
+                    window.audioStream = null;
+                }
+                
+                // Reset record status
+                document.getElementById('record-status').textContent = '';
             }
+        }
+
+        // Recording timer functions
+        function startRecordingTimer() {
+            if (window.recordingTimer) {
+                clearInterval(window.recordingTimer);
+            }
+            
+            window.recordingTimer = setInterval(() => {
+                if (window.recordingStartTime && window.isRecording) {
+                    const elapsed = Math.floor((Date.now() - window.recordingStartTime) / 1000);
+                    const minutes = Math.floor(elapsed / 60);
+                    const seconds = elapsed % 60;
+                    const timeStr = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+                    
+                    const timerEl = document.getElementById('recording-timer');
+                    if (timerEl) {
+                        timerEl.textContent = timeStr;
+                    }
+                    
+                    // Update record status with time
+                    const statusEl = document.getElementById('record-status');
+                    if (statusEl) {
+                        statusEl.textContent = `Recording: ${timeStr} - speak clearly`;
+                    }
+                }
+            }, 1000);
+        }
+
+        function stopRecordingTimer() {
+            if (window.recordingTimer) {
+                clearInterval(window.recordingTimer);
+                window.recordingTimer = null;
+            }
+            
+            const timerEl = document.getElementById('recording-timer');
+            if (timerEl) {
+                timerEl.textContent = '00:00';
+            }
+            
+            window.recordingStartTime = null;
+        }
+
+        // Microphone testing function for VM environments
+        async function testMicrophone() {
+            const testBtn = document.getElementById('test-microphone');
+            const resultDiv = document.getElementById('mic-test-result');
+            
+            testBtn.disabled = true;
+            testBtn.textContent = '🔄 Testing...';
+            resultDiv.innerHTML = '<div style="color: var(--info-color);">🔄 Running microphone diagnostics...</div>';
+
+            try {
+                // Test 1: Check if MediaDevices API is available
+                if (!navigator.mediaDevices) {
+                    throw new Error('MediaDevices API not available. Browser may be too old or not using HTTPS.');
+                }
+
+                if (!navigator.mediaDevices.getUserMedia) {
+                    throw new Error('getUserMedia not available. Please use a modern browser with HTTPS.');
+                }
+
+                resultDiv.innerHTML += '<div style="color: var(--success-color);">✅ MediaDevices API available</div>';
+
+                // Test 2: Check for audio devices
+                try {
+                    const devices = await navigator.mediaDevices.enumerateDevices();
+                    const audioInputs = devices.filter(device => device.kind === 'audioinput');
+                    
+                    if (audioInputs.length === 0) {
+                        throw new Error('No audio input devices found');
+                    }
+                    
+                    resultDiv.innerHTML += `<div style="color: var(--success-color);">✅ Found ${audioInputs.length} audio input device(s)</div>`;
+                } catch (enumError) {
+                    resultDiv.innerHTML += `<div style="color: var(--warning-color);">⚠️ Could not enumerate devices: ${enumError.message}</div>`;
+                }
+
+                // Test 3: Try to get microphone access with different configs
+                const configs = [
+                    { name: 'High Quality', config: { audio: { sampleRate: 16000, channelCount: 1, echoCancellation: true } } },
+                    { name: 'Basic', config: { audio: { sampleRate: 8000, echoCancellation: false } } },
+                    { name: 'Minimal', config: { audio: true } }
+                ];
+
+                let testStream = null;
+                let workingConfig = null;
+
+                for (const { name, config } of configs) {
+                    try {
+                        console.log(`Testing config: ${name}`, config);
+                        testStream = await navigator.mediaDevices.getUserMedia(config);
+                        workingConfig = name;
+                        resultDiv.innerHTML += `<div style="color: var(--success-color);">✅ Microphone access successful with ${name} config</div>`;
+                        break;
+                    } catch (configError) {
+                        resultDiv.innerHTML += `<div style="color: var(--warning-color);">⚠️ ${name} config failed: ${configError.message}</div>`;
+                    }
+                }
+
+                if (!testStream) {
+                    throw new Error('Unable to access microphone with any configuration');
+                }
+
+                // Test 4: Check audio levels
+                const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                const analyser = audioContext.createAnalyser();
+                const microphone = audioContext.createMediaStreamSource(testStream);
+                microphone.connect(analyser);
+
+                const dataArray = new Uint8Array(analyser.frequencyBinCount);
+                let audioDetected = false;
+
+                resultDiv.innerHTML += '<div style="color: var(--info-color);">🎤 Listening for audio... speak now!</div>';
+
+                // Listen for 3 seconds
+                const listenPromise = new Promise((resolve) => {
+                    let samples = 0;
+                    const maxSamples = 30; // 3 seconds at ~10 samples per second
+
+                    const checkAudio = () => {
+                        analyser.getByteFrequencyData(dataArray);
+                        const average = dataArray.reduce((a, b) => a + b) / dataArray.length;
+                        
+                        if (average > 10) { // Some audio detected
+                            audioDetected = true;
+                            resultDiv.innerHTML += `<div style="color: var(--success-color);">✅ Audio input detected! Level: ${Math.round(average)}</div>`;
+                            resolve();
+                            return;
+                        }
+
+                        samples++;
+                        if (samples < maxSamples) {
+                            setTimeout(checkAudio, 100);
+                        } else {
+                            resolve();
+                        }
+                    };
+
+                    checkAudio();
+                });
+
+                await listenPromise;
+
+                // Cleanup
+                testStream.getTracks().forEach(track => track.stop());
+                audioContext.close();
+
+                if (audioDetected) {
+                    resultDiv.innerHTML += '<div style="color: var(--success-color); font-weight: bold;">🎉 Microphone test PASSED! Your audio setup is working.</div>';
+                } else {
+                    resultDiv.innerHTML += '<div style="color: var(--warning-color);">⚠️ No audio detected. Check if microphone is muted or working properly.</div>';
+                }
+
+            } catch (error) {
+                console.error('Microphone test failed:', error);
+                
+                let troubleshooting = '';
+                if (error.name === 'NotAllowedError') {
+                    troubleshooting = '<br><strong>Solution:</strong> Click the microphone icon in your browser address bar and allow permissions.';
+                } else if (error.name === 'NotFoundError') {
+                    troubleshooting = '<br><strong>Solution:</strong> Check VM audio settings and ensure microphone is connected.';
+                } else if (error.message.includes('not available')) {
+                    troubleshooting = '<br><strong>Solution:</strong> Use HTTPS or localhost, update browser, check VM browser compatibility.';
+                }
+
+                resultDiv.innerHTML += `<div style="color: var(--error-color); font-weight: bold;">❌ Test FAILED: ${error.message}${troubleshooting}</div>`;
+            }
+
+            testBtn.disabled = false;
+            testBtn.textContent = '🎤 Test Microphone';
         }
 
         function stopRecording() {
             if (window.mediaRecorder && window.isRecording) {
                 window.mediaRecorder.stop();
                 window.isRecording = false;
+                
+                // Stop recording timer
+                stopRecordingTimer();
                 
                 // Stop all tracks
                 if (window.audioStream) {
@@ -1188,7 +1524,9 @@
                 // Hide recording visualizer
                 updateRecordingVisualization(false);
                 
+                // Update status
                 updateStatus('🔄 Processing your audio...', 'info');
+                document.getElementById('record-status').textContent = 'Processing audio...';
             }
         }
 
@@ -1382,10 +1720,43 @@
             }
         }
 
-        // Set up record button click handler
+        // Set up record button click handler with enhanced feedback
         document.addEventListener('DOMContentLoaded', function() {
             const recordBtn = document.getElementById('record-btn');
-            recordBtn.addEventListener('click', toggleRecording);
+            
+            // Enhanced click handler with visual feedback
+            recordBtn.addEventListener('click', async function(event) {
+                event.preventDefault();
+                
+                // Add click animation
+                recordBtn.style.transform = 'scale(0.95)';
+                setTimeout(() => {
+                    recordBtn.style.transform = 'scale(1)';
+                }, 150);
+                
+                // Show immediate feedback
+                const statusEl = document.getElementById('record-status');
+                if (!window.isRecording) {
+                    statusEl.textContent = 'Initializing microphone...';
+                } else {
+                    statusEl.textContent = 'Stopping recording...';
+                }
+                
+                try {
+                    await toggleRecording();
+                } catch (error) {
+                    console.error('Toggle recording failed:', error);
+                    statusEl.textContent = 'Error: ' + error.message;
+                }
+            });
+
+            // Add keyboard support for accessibility
+            recordBtn.addEventListener('keydown', function(event) {
+                if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    recordBtn.click();
+                }
+            });
 
             // Initialize Mobile Dashboard
             if (typeof MobileDashboard !== 'undefined') {
@@ -1395,9 +1766,51 @@
                 console.error('❌ MobileDashboard class not found');
             }
 
+            // Add browser/VM detection and warnings
+            detectEnvironmentIssues();
+
             console.log('🏏 Cricket Fitness Tracker Enhanced loaded');
             console.log('Mobile-first interface with working voice recording');
         });
+
+        // Detect potential VM/browser issues
+        function detectEnvironmentIssues() {
+            const warnings = [];
+            
+            // Check for HTTPS
+            if (location.protocol !== 'https:' && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
+                warnings.push('⚠️ HTTPS recommended for microphone access');
+            }
+            
+            // Check browser compatibility
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                warnings.push('❌ Browser does not support microphone access');
+            }
+            
+            // Check if running in iframe (common in VM web interfaces)
+            if (window !== window.top) {
+                warnings.push('⚠️ Running in iframe - microphone access may be restricted');
+            }
+            
+            // Check WebAudio API
+            if (!window.AudioContext && !window.webkitAudioContext) {
+                warnings.push('⚠️ Web Audio API not available');
+            }
+            
+            if (warnings.length > 0) {
+                console.warn('Environment warnings:', warnings);
+                
+                // Show warnings in the VM troubleshooting section
+                const troubleshootingDiv = document.getElementById('vm-troubleshooting');
+                if (troubleshootingDiv) {
+                    const warningList = warnings.map(w => `<li>${w}</li>`).join('');
+                    troubleshootingDiv.innerHTML = troubleshootingDiv.innerHTML.replace(
+                        '</ul>',
+                        `${warningList}</ul>`
+                    );
+                }
+            }
+        }
     </script>
 
     <!-- Activity Details Modal -->
