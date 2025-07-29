@@ -389,164 +389,110 @@
         }
 
         // Voice modal functions
-        // async function openVoiceModal(entryType) {
+        // Voice modal functions
+        async function openVoiceModal(entryType) {
+            // Initialize global flag if undefined
+            if (typeof window.isCreatingConversation === 'undefined') {
+                window.isCreatingConversation = false;
+            }
+
             // Prevent multiple simultaneous calls
-            if (isCreatingConversation || window.isCreatingConversation) {
+            if (window.isCreatingConversation) {
                 console.log('⚠️ Conversation creation already in progress, skipping...');
                 return;
             }
-            
-            currentEntryType = entryType;
-            const modal = document.getElementById('voice-modal');
-            const title = document.getElementById('voice-title');
-            const description = document.getElementById('voice-description');
-            
-            const titles = {
-                'fitness': '🏃 Log Fitness Activity',
-                'cricket_coaching': '🏏 Log Cricket Practice',
-                'cricket_match': '🏆 Log Match Performance', 
-                'rest_day': '😴 Log Rest Day'
-            };
-            
-            const descriptions = {
-                'fitness': 'Tell me about your workout, running, or fitness activity',
-                'cricket_coaching': 'Describe your cricket practice session and what you worked on',
-                'cricket_match': 'Share details about your match performance and how it went',
-                'rest_day': 'Let me know how your rest day went and how you\'re feeling'
-            };
-            
-            title.textContent = titles[entryType] || '🎤 Voice Recording';
-            description.textContent = descriptions[entryType] || 'Speak naturally about your activity';
-            
-            // Reset conversation state for new activity type
-            resetConversationState();
-            
-            modal.classList.remove('hidden');
-            
-            // Connect WebSocket if not already connected
-            if (!socket || socket.readyState !== WebSocket.OPEN) {
-                try {
-                    isCreatingConversation = true;
-                    window.isCreatingConversation = true;
+
+            window.isCreatingConversation = true;
+
+            try {
+                currentEntryType = entryType;
+                const modal = document.getElementById('voice-modal');
+                const title = document.getElementById('voice-title');
+                const description = document.getElementById('voice-description');
+
+                const titles = {
+                    'fitness': '🏃 Log Fitness Activity',
+                    'cricket_coaching': '🏏 Log Cricket Practice',
+                    'cricket_match': '🏆 Log Match Performance',
+                    'rest_day': '😴 Log Rest Day'
+                };
+
+                const descriptions = {
+                    'fitness': 'Tell me about your workout, running, or fitness activity',
+                    'cricket_coaching': 'Describe your cricket practice session and what you worked on',
+                    'cricket_match': 'Share details about your match performance and how it went',
+                    'rest_day': 'Let me know how your rest day went and how you\'re feeling'
+                };
+
+                title.textContent = titles[entryType] || '🎤 Voice Recording';
+                description.textContent = descriptions[entryType] || 'Speak naturally about your activity';
+
+                // Reset conversation state for new activity type
+                resetConversationState();
+
+                modal.classList.remove('hidden');
+
+                // Connect WebSocket if not already connected
+                if (!socket || socket.readyState !== WebSocket.OPEN) {
                     console.log('🔄 Creating new conversation...');
-                    // Show loading state in modal
                     updateStatus('🔄 Creating conversation session...', 'info');
-                    // create conversation to get session_id as conversation.id.
+
                     const conversation = await createConversation();
                     if (!conversation || !conversation.id) {
                         console.error('❌ Conversation creation failed or returned null:', conversation);
                         updateStatus('❌ Failed to create conversation. Please try again.', 'error');
-                        isCreatingConversation = false;
-                        window.isCreatingConversation = false;
                         modal.classList.add('hidden');
                         return;
                     }
+
                     currentSessionId = conversation.id;
-                    connectWebSocket(currentSessionId);
+                    
+                    // Wait for WebSocket connection before proceeding
+                    await new Promise((resolve, reject) => {
+                        connectWebSocket(currentSessionId);
+                        
+                        // Set a timeout to avoid hanging indefinitely
+                        const timeout = setTimeout(() => {
+                            reject(new Error('WebSocket connection timeout'));
+                        }, 10000);
+                        
+                        const checkConnection = setInterval(() => {
+                            if (socket && socket.readyState === WebSocket.OPEN) {
+                                clearTimeout(timeout);
+                                clearInterval(checkConnection);
+                                resolve();
+                            }
+                        }, 100);
+                    });
+
                     console.log('✅ Conversation created successfully:', currentSessionId);
-                    // Update status to show ready state
                     updateStatus('✅ Ready to record! Click microphone to start', 'success');
-                } catch (error) {
-                    console.error('❌ Failed to create conversation:', error);
-                    // Close modal on error
-                    modal.classList.add('hidden');
-                    alert(`Failed to start voice logging: ${error.message}`);
-                } finally {
-                    isCreatingConversation = false;
-                    window.isCreatingConversation = false;
+                } else {
+                    // WebSocket already connected, just update status
+                    updateStatus('✅ Ready to record! Click microphone to start', 'success');
                 }
-            } else {
-                // WebSocket already connected, just update status
-                updateStatus('✅ Ready to record! Click microphone to start', 'success');
-            }
-            
-            // Send metadata immediately to prepare backend for new activity type
-            setTimeout(() => {
-                sendSessionMetadata();
-            }, 500);
-        }
 
+                // Send metadata immediately to prepare backend for new activity type
+                setTimeout(() => {
+                    sendSessionMetadata();
+                }, 500);
 
-        // Voice modal functions
-        async function openVoiceModal(entryType) {
-    // Initialize global flag if undefined
-    if (typeof window.isCreatingConversation === 'undefined') {
-        window.isCreatingConversation = false;
-    }
-
-    // Prevent multiple simultaneous calls
-    if (window.isCreatingConversation) {
-        console.log('⚠️ Conversation creation already in progress, skipping...');
-        return;
-    }
-
-    window.isCreatingConversation = true;
-
-    try {
-        currentEntryType = entryType;
-        const modal = document.getElementById('voice-modal');
-        const title = document.getElementById('voice-title');
-        const description = document.getElementById('voice-description');
-
-        const titles = {
-            'fitness': '🏃 Log Fitness Activity',
-            'cricket_coaching': '🏏 Log Cricket Practice',
-            'cricket_match': '🏆 Log Match Performance',
-            'rest_day': '😴 Log Rest Day'
-        };
-
-        const descriptions = {
-            'fitness': 'Tell me about your workout, running, or fitness activity',
-            'cricket_coaching': 'Describe your cricket practice session and what you worked on',
-            'cricket_match': 'Share details about your match performance and how it went',
-            'rest_day': 'Let me know how your rest day went and how you\'re feeling'
-        };
-
-        title.textContent = titles[entryType] || '🎤 Voice Recording';
-        description.textContent = descriptions[entryType] || 'Speak naturally about your activity';
-
-        // Reset conversation state for new activity type
-        resetConversationState();
-
-        modal.classList.remove('hidden');
-
-        // Connect WebSocket if not already connected
-        if (!socket || socket.readyState !== WebSocket.OPEN) {
-            console.log('🔄 Creating new conversation...');
-            updateStatus('🔄 Creating conversation session...', 'info');
-
-            const conversation = await createConversation();
-            if (!conversation || !conversation.id) {
-                console.error('❌ Conversation creation failed or returned null:', conversation);
-                updateStatus('❌ Failed to create conversation. Please try again.', 'error');
+            } catch (error) {
+                console.error('❌ Failed to create conversation:', error);
+                const modal = document.getElementById('voice-modal');
                 modal.classList.add('hidden');
-                return;
+                updateStatus('❌ Failed to start voice logging. Please try again.', 'error');
+                
+                // Show a more user-friendly error message
+                if (error.message.includes('timeout')) {
+                    alert('Connection timeout. Please check your internet connection and try again.');
+                } else {
+                    alert(`Failed to start voice logging: ${error.message}`);
+                }
+            } finally {
+                window.isCreatingConversation = false;
             }
-
-            currentSessionId = conversation.id;
-            connectWebSocket(currentSessionId);
-
-            console.log('✅ Conversation created successfully:', currentSessionId);
-            updateStatus('✅ Ready to record! Click microphone to start', 'success');
-        } else {
-            // WebSocket already connected, just update status
-            updateStatus('✅ Ready to record! Click microphone to start', 'success');
         }
-
-        // Send metadata immediately to prepare backend for new activity type
-        setTimeout(() => {
-            sendSessionMetadata();
-        }, 500);
-
-    } catch (error) {
-        console.error('❌ Failed to create conversation:', error);
-        const modal = document.getElementById('voice-modal');
-        modal.classList.add('hidden');
-        alert(`Failed to start voice logging: ${error.message}`);
-    } finally {
-        window.isCreatingConversation = false;
-    }
-}
 
         /**
          * Send session metadata to backend to prepare for new activity type
